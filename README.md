@@ -1,5 +1,10 @@
 # Load Books into Snowflake AI
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Snowflake](https://img.shields.io/badge/Snowflake-Compatible-blue.svg)](https://www.snowflake.com/)
+[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
+[![Mistral LLM](https://img.shields.io/badge/Mistral-7B_Instruct-green.svg)](https://huggingface.co/mistralai)
+
 This repository contains a Python script to ingest PDF books into Snowflake, split them into text chunks, and create embeddings using Snowflake AI for semantic queries.
 
 ## Files
