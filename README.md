@@ -69,12 +69,17 @@ Overall, the collection is **strong** on foundations, warehousing, batch/streami
 
 | Gap | Why it matters | Possible additions |
 |-----|----------------|--------------------|
+| **DW 2.0 / Inmon** | You have Kimball (dimensional); no Inmon view of warehousing architecture (corporate information factory, top-down EDW). | *DW 2.0: The Architecture for the Next Generation of Data Warehousing* (Inmon et al.). |
 | **Orchestration** | No book focused on Airflow/Prefect/Dagster. | *Data Pipelines with Apache Airflow* or similar. |
 | **Analytics engineering / dbt** | Transformations-in-SQL, testing, docs. | *Analytics Engineering with dbt* or dbt Labs docs. |
 | **Data quality & reliability** | Contracts, testing, monitoring, SLOs. | *Data Quality Fundamentals* (Barr Moses et al.) or *Data Contracts* (Andrew Jones). |
 | **Governance / catalog / lineage** | Discovery, lineage, ownership. | *Data Governance* (O’Reilly) or *Data Mesh* (Dehghani). |
+| **Data modeling (3NF / Data Vault)** | Kimball is dimensional; no dedicated coverage of 3NF, canonical modeling, or Data Vault. | *Building a Scalable Data Warehouse with Data Vault 2.0* (Linstedt) or similar. |
+| **MLOps / feature stores** | Building and serving features for ML; not in the collection. | *Feature Store for Machine Learning* (O’Reilly) or vendor docs (Feast, Tecton). |
+| **Real-time analytics** | Streaming is covered; real-time dashboards, time-series, and operational analytics are a distinct focus. | *Real-Time Analytics* (O’Reilly) or platform docs (e.g. ksqlDB, Pinot). |
+| **Data observability** | Monitoring data health, freshness, and lineage in production. | *Data Observability* (Barr Moses) or *Data Reliability Engineering* (O’Reilly). |
 
-These are **optional**; the current set already covers core DE well. Add books in the gaps above if you want deeper coverage of orchestration, dbt, data quality, or governance.
+These are **optional**; the current set already covers core DE well. Add books in the gaps above if you want deeper coverage of Inmon/DW 2.0, orchestration, dbt, data quality, governance, data vault, MLOps, real-time analytics, or observability.
 
 ---
 
