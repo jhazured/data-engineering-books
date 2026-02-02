@@ -57,6 +57,8 @@ Then query in Snowflake (see [Query embeddings](#query-embeddings)) or use the [
 
 ## Architecture
 
+![Data Engineering Knowledge Base architecture](docs/images/architecture.png)
+
 ```
 PDFs (books_pdf_folder/)
     → load_books_to_snowflake.py (extract text, chunk)
