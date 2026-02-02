@@ -33,10 +33,6 @@ python scripts/verify_setup.py
 
 Then query in Snowflake (see [Query embeddings](#query-embeddings)) or use the [Mistral agent](#mistral-agent) from Python.
 
-### Demo / screenshots
-
-*Add a short demo GIF or screenshots here (e.g. Snowflake worksheet with a vector search query and results, or Mistral agent Q&A) to make the project more compelling for recruiters and viewers.*
-
 ---
 
 ## Project structure
@@ -48,7 +44,7 @@ Then query in Snowflake (see [Query embeddings](#query-embeddings)) or use the [
 | `scripts/mistral_snowflake_agent.py` | Mistral LLM agent: Q&A, RAG from vector DB, SQL execution in Snowflake, Pandas/CSV agent. |
 | `scripts/snowflake_helper.py` | Snowflake helper used by the Mistral agent to run SQL (reads config from `.env` or env vars). |
 | `.env.example` | Template for Snowflake and Hugging Face credentials; copy to `.env` and fill in. |
-| `requirements.txt` | Python dependencies. |
+| `requirements.txt` | Python dependencies (key versions pinned for reproducibility; see [Dependencies](#dependencies)). |
 | `scripts/verify_setup.py` | Verify Python packages and optional Snowflake connectivity. |
 
 ---
@@ -129,7 +125,9 @@ Use **requirements.txt** for a reproducible install (recommended):
 pip install -r requirements.txt
 ```
 
-Use **manual install** only if you need to pin specific versions or install a subset (e.g. loader only, without LangChain):
+**Dependencies:** Key packages are pinned in `requirements.txt` for reproducibility: `snowflake-connector-python`, `pdfplumber`, `pandas`, and the LangChain set (`langchain`, `langchain-community`, `langchain-experimental`). See the file for exact version ranges.
+
+Use **manual install** only if you need to install a subset (e.g. loader only, without LangChain):
 
 ```bash
 pip install pdfplumber snowflake-connector-python pandas langchain langchain-community langchain-experimental
@@ -266,8 +264,20 @@ from scripts.mistral_snowflake_agent import (
 # Simple Q&A (no context)
 answer = ask_mistral("What is ETL?")
 print(answer)
-# Expected output (example): "ETL stands for Extract, Transform, Load..."
+```
 
+**Example output** (actual response will vary by model):
+
+```
+ETL stands for Extract, Transform, Load. It's a process used in data warehousing and analytics:
+1. Extract — pull data from source systems (databases, APIs, files).
+2. Transform — clean, validate, and reshape the data (e.g. deduplication, type casting).
+3. Load — write the transformed data into a target (e.g. warehouse, lake).
+
+ETL pipelines are often scheduled (batch) or event-driven and are foundational for analytics and ML.
+```
+
+```python
 # RAG: answer using your book chunks from a vector DB
 answer_context = personal_mistral(
     "How do I orchestrate data pipelines with Airflow?", vector_db
@@ -286,13 +296,7 @@ The agent uses `scripts/snowflake_helper.py` to run SQL in Snowflake; configure 
 
 ## Performance
 
-Typical ranges (depend on warehouse size, PDF count, and chunk size):
-
-- **Processing time:** ~X seconds per MB of PDF content (extract + chunk).
-- **Embedding generation:** ~Y chunks per minute (Snowflake `AI_EMBED_TEXT`).
-- **Vector search latency:** Sub-second for typical queries on small/medium corpora.
-
-Measure with your own data; scale warehouse or chunk size as needed.
+Performance depends on warehouse size, PDF count, and chunk size. Run the loader with your own data and measure extract time, embedding throughput, and query latency; scale warehouse or adjust `CHUNK_SIZE` as needed.
 
 ---
 
@@ -315,6 +319,13 @@ Measure with your own data; scale warehouse or chunk size as needed.
 - **Scanned PDFs:** Image-only PDFs may need OCR before ingesting.
 - **Metadata:** The loader adds `author`, `publication_year`, and `section_title` (from PDF metadata and per-page first line). Use these in SQL for filtering and display (e.g. `WHERE author = '...'`, `ORDER BY publication_year`).
 - **Chunk size:** Smaller chunks give more precise retrieval; larger chunks give more context per chunk.
+- **Chunk overlap:** Standard RAG practice often uses overlapping chunks (e.g. 1000 chars with 200 char stride) to preserve context at boundaries. This implementation uses non-overlapping chunks; overlap can be added in the loader for improved retrieval.
+
+---
+
+## Loader robustness and error handling
+
+The loader handles common edge cases: empty or missing PDF metadata (author/year default to "Unknown" / NULL); pages with no text (section_title remains NULL); and per-PDF extraction wrapped in iteration so one bad file does not stop the run. Encoding is handled via pdfplumber’s default UTF-8 extraction. Corrupted or password-protected PDFs can cause a single-file failure; remove or fix those files and re-run. For production, consider try/except per file and logging failed paths.
 
 ---
 
