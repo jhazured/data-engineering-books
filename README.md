@@ -28,7 +28,7 @@ pip install -r requirements.txt
 cp .env.example .env
 # Edit .env with your Snowflake and Hugging Face values.
 
-# 3. Add PDFs to books_pdf_folder/ (or use the ones already there)
+# 3. Place your PDFs in books_pdf_folder/
 
 # 4. Load books and create embeddings in Snowflake
 python scripts/load_books_to_snowflake.py
@@ -45,7 +45,7 @@ Then query in Snowflake (see [Query embeddings](#query-embeddings)) or use the [
 
 | Path | Description |
 |------|-------------|
-| `books_pdf_folder/` | PDF books to ingest (place your `.pdf` files here, or use the ones already there). |
+| `books_pdf_folder/` | PDF books to ingest (place your `.pdf` files here). |
 | `scripts/load_books_to_snowflake.py` | Extract text from PDFs, chunk, upload to Snowflake; adds metadata (author, publication_year, section_title) from PDF metadata and per-page headings. Creates `books` and `book_embeddings` tables. |
 | `scripts/mistral_snowflake_agent.py` | Mistral LLM agent: Q&A, RAG from vector DB, SQL execution in Snowflake, Pandas/CSV agent. |
 | `scripts/snowflake_helper.py` | Snowflake helper used by the Mistral agent to run SQL (reads config from `.env` or env vars). |
@@ -195,7 +195,7 @@ repo_id = "YOUR_MISTRAL_MODEL_REPO"  # e.g. mistralai/Mistral-7B-Instruct-v0.2
 
 ### 4. PDFs
 
-Put PDF files in `books_pdf_folder/`, or use the ones already there. The loader reads all `.pdf` files in that folder. If there are no PDFs, the script exits without connecting to Snowflake.
+Place your PDF files in `books_pdf_folder/`. The loader reads all `.pdf` files in that folder. If there are no PDFs, the script exits without connecting to Snowflake.
 
 ### 5. Chunk size (optional)
 
@@ -297,6 +297,8 @@ csv_result = mistral_csv(my_df, "What is the average value of column X?")
 ```
 
 The agent uses `scripts/snowflake_helper.py` to run SQL in Snowflake; configure Snowflake via `.env` or environment variables (see [Setup](#setup-first-time)).
+
+**Note:** The Mistral agent uses LangChain’s `LLMChain`, which is deprecated in newer LangChain versions. You may see a deprecation warning; the code still works. Migrating to LCEL (LangChain Expression Language) is planned for a future update.
 
 ---
 

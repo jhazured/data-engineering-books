@@ -15,6 +15,13 @@ if REPO_ROOT not in sys.path:
 if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
 
+# Auto-load .env before Snowflake check if python-dotenv is available
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(REPO_ROOT, ".env"))
+except ImportError:
+    pass
+
 
 def check_packages():
     """Check required packages are installed."""
@@ -31,7 +38,11 @@ def check_packages():
     for mod, pkg in required:
         try:
             __import__(mod)
-            print(f"  OK  {pkg}")
+            if mod == "pdfplumber":
+                import pdfplumber
+                print(f"  OK  {pkg} ({getattr(pdfplumber, '__version__', '?')})")
+            else:
+                print(f"  OK  {pkg}")
         except ImportError:
             print(f"  MISSING  {pkg}  (pip install {pkg})")
             all_ok = False
@@ -56,6 +67,18 @@ def check_env():
         print("  WARN .env exists but contains placeholders; replace with your credentials")
         return False
     print("  OK  .env present (credentials set)")
+    return True
+
+
+def check_huggingface():
+    """Check Hugging Face token (needed for Mistral agent)."""
+    token = os.environ.get("HUGGINGFACEHUB_API_TOKEN", "")
+    if token and not token.startswith("hf_"):
+        print("  WARN HUGGINGFACEHUB_API_TOKEN set but doesn't look like a valid token (expect hf_...)")
+    elif token:
+        print("  OK  HUGGINGFACEHUB_API_TOKEN set")
+    else:
+        print("  -   HUGGINGFACEHUB_API_TOKEN not set (needed for Mistral agent)")
     return True
 
 
@@ -84,12 +107,14 @@ def main():
     pkgs_ok = check_packages()
     print("\nConfiguration:")
     check_env()
+    print("\nOptional (Hugging Face):")
+    check_huggingface()
     print("\nOptional (Snowflake):")
     check_snowflake_connection()
     print("-" * 40)
     if not pkgs_ok:
         print("Fix missing packages, then run again.")
-        sys.exit(1)
+        return 1
     print("Setup verification complete.")
     return 0
 

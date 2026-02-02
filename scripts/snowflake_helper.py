@@ -5,7 +5,7 @@ Configure via environment variables or a config dict.
 """
 
 import os
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Tuple, Union
 
 try:
     import snowflake.connector
@@ -25,19 +25,29 @@ def _get_config() -> dict:
     }
 
 
-def snowflake_run_new(sql: str, config: Optional[dict] = None) -> List[Any]:
+def snowflake_run_new(
+    sql: str,
+    params: Optional[tuple] = None,
+    config: Optional[dict] = None,
+    include_headers: bool = False,
+) -> Union[List[Any], Tuple[List[str], List[Any]]]:
     """
     Execute SQL in Snowflake and return result rows.
+    Uses context manager for connection/cursor. Supports parameterized queries (params).
+    If include_headers=True, returns (column_names, rows).
     """
     if snowflake is None:
         raise ImportError("snowflake-connector-python is required. pip install snowflake-connector-python")
     cfg = config or _get_config()
-    conn = snowflake.connector.connect(**cfg)
-    try:
-        cur = conn.cursor()
-        cur.execute(sql)
-        rows = cur.fetchall()
-        cur.close()
-        return rows
-    finally:
-        conn.close()
+    with snowflake.connector.connect(**cfg) as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, params or ())
+            rows = cur.fetchall()
+            if include_headers and cur.description:
+                columns = [desc[0] for desc in cur.description]
+                return columns, rows
+            return rows
+
+
+# Alias for callers that expect run_sql
+run_sql = snowflake_run_new

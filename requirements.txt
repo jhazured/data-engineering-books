@@ -1,9 +1,11 @@
 # Load books and embeddings (reproducible install)
 pdfplumber>=0.10.0,<0.11
+python-dotenv>=1.0.0
 snowflake-connector-python>=3.8.0,<4
 pandas>=1.5.0,<3
 
 # Mistral agent (LangChain + HuggingFace)
+huggingface_hub>=0.20.0
 langchain>=0.1.0,<0.4
 langchain-community>=0.0.10,<0.4
 langchain-experimental>=0.0.10,<0.4
