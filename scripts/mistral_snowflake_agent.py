@@ -4,7 +4,11 @@ from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe
 from langchain_community.llms import HuggingFaceEndpoint
 from langchain.chains import LLMChain
 from langchain.prompts import PromptTemplate
-import shantanu_snow  # Your Snowflake helper
+try:
+    from scripts import snowflake_helper
+except ImportError:
+    import snowflake_helper
+_snowflake_run = snowflake_helper.snowflake_run_new
 from typing import List
 
 # -----------------------------
@@ -68,9 +72,9 @@ def personal_mistral_snowflake(question: str, db) -> List:
         print("---- SQL ----")
         print(sql_code)
         print("-------------")
-        # Execute SQL using your Snowflake helper
+        # Execute SQL using Snowflake helper
         try:
-            res = shantanu_snow.snowflake_run_new(sql_code)
+            res = _snowflake_run(sql_code)
             results_list.append(res)
         except Exception as e:
             print(f"❌ Error executing SQL: {e}")

@@ -7,7 +7,9 @@ import pandas as pd
 # -----------------------------
 # 1️⃣ Configuration
 # -----------------------------
-PDF_FOLDER = "books_pdf_folder"  # folder containing PDFs
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT = os.path.dirname(_SCRIPT_DIR)
+PDF_FOLDER = os.path.join(_REPO_ROOT, "books_pdf_folder")  # folder containing PDFs
 SNOWFLAKE_CONFIG = {
     "user": "YOUR_USER",
     "password": "YOUR_PASSWORD",
@@ -64,33 +66,38 @@ df = pd.DataFrame(data_rows)
 # -----------------------------
 # 5️⃣ Connect to Snowflake and create table
 # -----------------------------
+if df.empty:
+    print("⚠️ No PDFs found in books_pdf_folder. Add PDFs and run again.")
+    exit(0)
+
 conn = snowflake.connector.connect(**SNOWFLAKE_CONFIG)
-cs = conn.cursor()
+try:
+    cs = conn.cursor()
+    cs.execute("""
+    CREATE OR REPLACE TABLE books (
+        book_id STRING,
+        chunk_id INT,
+        content STRING
+    )
+    """)
 
-cs.execute("""
-CREATE OR REPLACE TABLE books (
-    book_id STRING,
-    chunk_id INT,
-    content STRING
-)
-""")
+    # -----------------------------
+    # 6️⃣ Load data into Snowflake
+    # -----------------------------
+    write_pandas(conn, df, 'BOOKS')
 
-# -----------------------------
-# 6️⃣ Load data into Snowflake
-# -----------------------------
-write_pandas(conn, df, 'BOOKS')
-
-# -----------------------------
-# 7️⃣ Create embeddings table
-# -----------------------------
-cs.execute("""
-CREATE OR REPLACE TABLE book_embeddings AS
-SELECT
-    book_id,
-    chunk_id,
-    content,
-    AI_EMBED_TEXT(content, 'text-embedding-3-large') AS vector
-FROM books
-""")
-
-print("✅ All books loaded and embeddings created!")
+    # -----------------------------
+    # 7️⃣ Create embeddings table
+    # -----------------------------
+    cs.execute("""
+    CREATE OR REPLACE TABLE book_embeddings AS
+    SELECT
+        book_id,
+        chunk_id,
+        content,
+        AI_EMBED_TEXT(content, 'text-embedding-3-large') AS vector
+    FROM books
+    """)
+    print("✅ All books loaded and embeddings created!")
+finally:
+    conn.close()

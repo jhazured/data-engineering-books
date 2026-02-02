@@ -1,0 +1,9 @@
+# Load books and embeddings
+pdfplumber>=0.10.0
+snowflake-connector-python>=3.0.0
+pandas>=1.5.0
+
+# Mistral agent (LangChain + HuggingFace)
+langchain>=0.1.0
+langchain-community>=0.0.10
+langchain-experimental>=0.0.10
