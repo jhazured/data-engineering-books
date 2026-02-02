@@ -6,6 +6,7 @@ This repository contains a Python script to ingest PDF books into Snowflake, spl
 
 * `load_books_to_snowflake.py` - Python script to extract text, chunk, upload to Snowflake, and generate embeddings.
 * `books_pdf_folder/` - Folder to store your PDF books.
+* `mistral_agent.py` - Python script to interact with Mistral LLM, query vector DB, execute SQL in Snowflake, and work with CSV/Pandas data.
 
 ## Requirements
 
@@ -13,13 +14,14 @@ This repository contains a Python script to ingest PDF books into Snowflake, spl
 * Packages:
 
   ```bash
-  pip install pdfplumber snowflake-connector-python pandas
+  pip install pdfplumber snowflake-connector-python pandas langchain langchain-communities langchain-experimental
   ```
 * Snowflake account with:
 
   * Database and schema access
   * Warehouse
   * AI feature enabled (`AI_EMBED_TEXT`)
+* Hugging Face account and API token for Mistral model
 
 ## Configuration
 
@@ -37,26 +39,29 @@ SNOWFLAKE_CONFIG = {
 }
 ```
 
-3. Adjust `CHUNK_SIZE` if you want smaller or larger text chunks.
+3. Set your Hugging Face API token as an environment variable:
+
+```bash
+export HUGGINGFACEHUB_API_TOKEN="hf_your_token_here"
+```
+
+4. Replace the Mistral repo in `mistral_agent.py` with your model repository:
+
+```python
+repo_id = "YOUR_MISTRAL_MODEL_REPO"
+```
+
+5. Adjust `CHUNK_SIZE` if you want smaller or larger text chunks.
 
 ## Usage
 
-Run the script:
+### Load books and create embeddings:
 
 ```bash
 python load_books_to_snowflake.py
 ```
 
-The script will:
-
-1. Extract text from each PDF
-2. Split text into chunks
-3. Load chunks into Snowflake table `books`
-4. Generate embeddings into table `book_embeddings`
-
-## Querying the Data
-
-You can query the most relevant text chunks using Snowflake AI and semantic search:
+### Query Snowflake embeddings:
 
 ```sql
 SELECT content
@@ -67,16 +72,34 @@ ORDER BY VECTOR_SIMILARITY(
 LIMIT 3;
 ```
 
-This will return the top 3 text chunks most relevant to your query.
+### Use Mistral agent for questions:
+
+```python
+from mistral_agent import ask_mistral, personal_mistral, personal_mistral_snowflake, mistral_csv
+
+# Normal QA
+answer = ask_mistral("What is ETL?")
+
+# RAG QA from vector DB
+answer_context = personal_mistral("How do I orchestrate data pipelines with Airflow?", vector_db)
+
+# Generate and execute SQL in Snowflake
+sql_results = personal_mistral_snowflake("Get total users per region", vector_db)
+
+# Query CSV / DataFrame
+csv_result = mistral_csv(my_df, "What is the average value of column X?")
+```
 
 ## Notes
 
 * For scanned PDFs, you may need to run OCR before ingesting.
-* Consider keeping metadata like book title and author for better organization.
+* Keep metadata like book title and author for better organization.
 * Adjust chunk size to balance performance and accuracy of AI queries.
+* Ensure your Hugging Face token and Mistral repo are correctly configured.
 
 ## Optional Enhancements
 
 * Automatically detect and OCR scanned PDFs.
 * Include chapter/section titles in the table.
-* Add book metadata columns (`author`, `publication_year`) for richer
+* Add book metadata columns (`author`, `publication_year`) for richer queries.
+* Expand Mistral agent
