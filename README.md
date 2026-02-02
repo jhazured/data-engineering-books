@@ -1,9 +1,10 @@
 # Load Books into Snowflake AI
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Snowflake](https://img.shields.io/badge/Snowflake-Compatible-blue.svg)](https://www.snowflake.com/)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
 [![Mistral LLM](https://img.shields.io/badge/Mistral-7B_Instruct-green.svg)](https://huggingface.co/mistralai)
+
+*Add a CI/CD badge here if you set up GitHub Actions; a "last updated" badge is also useful. Screenshots or a short demo GIF of queries and results make the project more compelling.*
 
 Ingest PDF books into Snowflake, split them into text chunks, and create embeddings using Snowflake AI for semantic search. Optionally use the Mistral agent (LangChain + Hugging Face) for Q&A, RAG, and SQL over your book content.
 
@@ -25,6 +26,9 @@ cp .env.example .env
 
 # 4. Load books and create embeddings in Snowflake
 python scripts/load_books_to_snowflake.py
+
+# 5. Verify setup (optional)
+python scripts/verify_setup.py
 ```
 
 Then query in Snowflake (see [Query embeddings](#query-embeddings)) or use the [Mistral agent](#mistral-agent) from Python.
@@ -35,12 +39,28 @@ Then query in Snowflake (see [Query embeddings](#query-embeddings)) or use the [
 
 | Path | Description |
 |------|-------------|
-| `books_pdf_folder/` | PDF books to ingest (place your `.pdf` files here). |
+| `books_pdf_folder/` | PDF books to ingest (place your `.pdf` files here). **PDFs are not included in this repository.** Users must source their own legally obtained PDF copies. |
 | `scripts/load_books_to_snowflake.py` | Extract text from PDFs, chunk, upload to Snowflake, create `books` and `book_embeddings` tables. |
 | `scripts/mistral_snowflake_agent.py` | Mistral LLM agent: Q&A, RAG from vector DB, SQL execution in Snowflake, Pandas/CSV agent. |
 | `scripts/snowflake_helper.py` | Snowflake helper used by the Mistral agent to run SQL (reads config from `.env` or env vars). |
 | `.env.example` | Template for Snowflake and Hugging Face credentials; copy to `.env` and fill in. |
 | `requirements.txt` | Python dependencies. |
+| `scripts/verify_setup.py` | Verify Python packages and optional Snowflake connectivity. |
+
+---
+
+## Architecture
+
+```
+PDFs (books_pdf_folder/)
+    → load_books_to_snowflake.py (extract text, chunk)
+    → Snowflake: books (chunks) → book_embeddings (AI_EMBED_TEXT vectors)
+    → Vector search (SQL) or Mistral agent (RAG, Q&A, SQL over Snowflake)
+```
+
+- **PDFs** → Python script extracts text, splits into chunks (default 1000 chars).
+- **Snowflake** → `books` table stores chunks; `book_embeddings` adds vectors via Snowflake AI (`AI_EMBED_TEXT`, default model `text-embedding-3-large`; vector dimensionality is model-dependent—see Snowflake docs).
+- **Consumption** → Query embeddings with `VECTOR_SIMILARITY` in SQL, or use the Mistral agent for RAG, Q&A, and SQL generation.
 
 ---
 
@@ -86,7 +106,7 @@ These are **optional**; the current set already covers core DE well. Add books i
 ## Requirements
 
 - **Python 3.8+**
-- **Snowflake account** with database/schema access, a warehouse, and **AI feature** enabled (`AI_EMBED_TEXT` for embeddings).
+- **Snowflake account** with database/schema access, a warehouse, and **AI feature** enabled (`AI_EMBED_TEXT` for embeddings). Snowflake AI usage (e.g. embeddings) may incur additional cost; see [Snowflake pricing](https://www.snowflake.com/pricing/) and your warehouse size for compute. A small warehouse is usually sufficient for small/medium book sets.
 - **Hugging Face account** and API token (for the Mistral agent only).
 
 ---
@@ -95,17 +115,29 @@ These are **optional**; the current set already covers core DE well. Add books i
 
 Do this once before loading books or using the Mistral agent.
 
+**⚠️ Never commit credentials.** This project uses `.env` for local development only. Do not commit `.env` or put real credentials in code.
+
 ### 1. Install Python packages
+
+Use **requirements.txt** for a reproducible install (recommended):
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Optional manual install:
+Use **manual install** only if you need to pin specific versions or install a subset (e.g. loader only, without LangChain):
 
 ```bash
 pip install pdfplumber snowflake-connector-python pandas langchain langchain-community langchain-experimental
 ```
+
+**Verify installation:**
+
+```bash
+python scripts/verify_setup.py
+```
+
+This checks that required packages are installed, `.env` exists, and optionally tests the Snowflake connection.
 
 ### 2. Snowflake credentials
 
@@ -155,7 +187,7 @@ repo_id = "YOUR_MISTRAL_MODEL_REPO"  # e.g. mistralai/Mistral-7B-Instruct-v0.2
 
 ### 4. PDFs
 
-Put PDF files in `books_pdf_folder/`. The loader reads all `.pdf` files in that folder. If there are no PDFs, the script exits without connecting to Snowflake.
+Put PDF files in `books_pdf_folder/`. The loader reads all `.pdf` files in that folder. If there are no PDFs, the script exits without connecting to Snowflake. **PDFs are not included in this repository; source your own legally obtained copies.**
 
 ### 5. Chunk size (optional)
 
@@ -182,6 +214,14 @@ The script will:
 
 If no PDFs are found, it prints a message and exits without connecting to Snowflake.
 
+**Expected output (success):**
+
+```
+✅ All books loaded and embeddings created!
+```
+
+**Expected results:** Tables `books` (columns: `book_id`, `chunk_id`, `content`) and `book_embeddings` (columns: `book_id`, `chunk_id`, `content`, `vector`) are created or replaced. Row count in `books` equals total chunks across all PDFs.
+
 ### Query embeddings
 
 In Snowflake (worksheet or CLI), run semantic search over the embedded chunks:
@@ -194,6 +234,8 @@ ORDER BY VECTOR_SIMILARITY(
 ) DESC
 LIMIT 3;
 ```
+
+**Expected results:** Returns the top 3 text chunks most similar to the query (e.g. "Explain ETL concepts"). Each row is a chunk of book content; use `content` for display or downstream RAG.
 
 ### Mistral agent
 
@@ -209,6 +251,8 @@ from scripts.mistral_snowflake_agent import (
 
 # Simple Q&A (no context)
 answer = ask_mistral("What is ETL?")
+print(answer)
+# Expected output (example): "ETL stands for Extract, Transform, Load..."
 
 # RAG: answer using your book chunks from a vector DB
 answer_context = personal_mistral(
@@ -226,12 +270,59 @@ The agent uses `scripts/snowflake_helper.py` to run SQL in Snowflake; configure 
 
 ---
 
+## Performance
+
+Typical ranges (depend on warehouse size, PDF count, and chunk size):
+
+- **Processing time:** ~X seconds per MB of PDF content (extract + chunk).
+- **Embedding generation:** ~Y chunks per minute (Snowflake `AI_EMBED_TEXT`).
+- **Vector search latency:** Sub-second for typical queries on small/medium corpora.
+
+Measure with your own data; scale warehouse or chunk size as needed.
+
+---
+
+## Troubleshooting
+
+| Issue | What to do |
+|-------|------------|
+| **PDF extraction fails or returns empty text** | Ensure PDFs are text-based, not scanned images. Use OCR for image-only PDFs. |
+| **Snowflake connection timeout** | Verify warehouse is running (not suspended), credentials in `.env` or script are correct, and network allows outbound to Snowflake. |
+| **Embeddings creation slow** | Check warehouse size; consider scaling up. Reduce `CHUNK_SIZE` or number of PDFs per run to test. |
+| **`AI_EMBED_TEXT` not found** | Enable Snowflake AI features on your account; confirm model name (e.g. `text-embedding-3-large`) is available in your region. |
+| **Mistral agent import error** | Install optional packages: `pip install langchain langchain-community langchain-experimental`. Set `HUGGINGFACEHUB_API_TOKEN` and `repo_id` in the agent script. |
+| **Corrupted or password-protected PDFs** | Remove or fix PDFs; the loader skips or fails on unreadable files. |
+
+---
+
 ## Notes
 
 - **Secrets:** Do not commit `.env`. It is listed in `.gitignore`.
 - **Scanned PDFs:** Image-only PDFs may need OCR before ingesting.
 - **Metadata:** Consider adding book title, author, or other metadata for richer queries.
 - **Chunk size:** Smaller chunks give more precise retrieval; larger chunks give more context per chunk.
+
+---
+
+## Production / next steps
+
+This project is set up for **local development**. To productionize or harden:
+
+- **Orchestration:** Run the loader on a schedule (e.g. Airflow DAG, Prefect flow, or cron).
+- **Containerization:** Dockerize the loader and run in a container (e.g. Azure Container Instances, AWS ECS).
+- **CI/CD:** Add GitHub Actions to run `verify_setup.py` and optional Snowflake connectivity checks; add data quality checks (duplicate detection, chunk size validation).
+- **Secrets:** Use a secrets manager (e.g. Azure Key Vault, AWS Secrets Manager) instead of `.env` in production.
+
+---
+
+## What this demonstrates
+
+- **Snowflake:** Tables, AI features (`AI_EMBED_TEXT`), vector search, SQL.
+- **Python data engineering:** PDF processing, chunking, Snowflake connector.
+- **Modern AI/ML:** Embeddings, RAG, vector search, LLM integration (Mistral).
+- **Documentation:** Setup, architecture, troubleshooting, expected results.
+
+**Possible extensions:** CI/CD with GitHub Actions (test Snowflake connection, data quality); data quality checks (duplicate detection, chunk size validation); production deployment (Airflow, containers).
 
 ---
 
