@@ -6,7 +6,13 @@
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
 [![Mistral LLM](https://img.shields.io/badge/Mistral-7B_Instruct-green.svg)](https://huggingface.co/mistralai)
 
-Ingest PDF books into Snowflake, split them into text chunks, and create embeddings using Snowflake AI for semantic search. Optionally use the Mistral agent (LangChain + Hugging Face) for Q&A, RAG, and SQL over your book content.
+## Introduction
+
+**Load Books into Snowflake AI** is a small pipeline that ingests PDF books into Snowflake, chunks the text, and builds vector embeddings with Snowflake’s built-in AI. You can then run semantic search in SQL or use an optional Mistral-based agent (LangChain + Hugging Face) for Q&A, RAG over your book corpus, and SQL generation against Snowflake.
+
+The project is aimed at data engineers and learners who want to combine **Snowflake** (tables, `AI_EMBED_TEXT`, vector search) with **Python** (PDF extraction, chunking, metadata) and **LLM/RAG** (Mistral agent). It demonstrates practical data engineering—ingestion, metadata, chunking—and modern analytics AI: embeddings, vector similarity, and retrieval-augmented generation. The repo also includes a short **book collection analysis** (strengths and gaps) for data engineering reading.
+
+Use it to run semantic search over your own PDFs in Snowflake, to experiment with RAG and vector search, or as a portfolio piece showing Snowflake AI, Python pipelines, and documentation.
 
 ---
 
@@ -39,7 +45,7 @@ Then query in Snowflake (see [Query embeddings](#query-embeddings)) or use the [
 
 | Path | Description |
 |------|-------------|
-| `books_pdf_folder/` | PDF books to ingest (place your `.pdf` files here). **PDFs are not included in this repository.** Users must source their own legally obtained PDF copies. |
+| `books_pdf_folder/` | PDF books to ingest (place your `.pdf` files here, or use the ones already there). |
 | `scripts/load_books_to_snowflake.py` | Extract text from PDFs, chunk, upload to Snowflake; adds metadata (author, publication_year, section_title) from PDF metadata and per-page headings. Creates `books` and `book_embeddings` tables. |
 | `scripts/mistral_snowflake_agent.py` | Mistral LLM agent: Q&A, RAG from vector DB, SQL execution in Snowflake, Pandas/CSV agent. |
 | `scripts/snowflake_helper.py` | Snowflake helper used by the Mistral agent to run SQL (reads config from `.env` or env vars). |
@@ -189,7 +195,7 @@ repo_id = "YOUR_MISTRAL_MODEL_REPO"  # e.g. mistralai/Mistral-7B-Instruct-v0.2
 
 ### 4. PDFs
 
-Put PDF files in `books_pdf_folder/`. The loader reads all `.pdf` files in that folder. If there are no PDFs, the script exits without connecting to Snowflake. **PDFs are not included in this repository; source your own legally obtained copies.**
+Put PDF files in `books_pdf_folder/`, or use the ones already there. The loader reads all `.pdf` files in that folder. If there are no PDFs, the script exits without connecting to Snowflake.
 
 ### 5. Chunk size (optional)
 
