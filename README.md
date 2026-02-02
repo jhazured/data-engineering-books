@@ -255,6 +255,8 @@ ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('Explain ETL concepts'), vector) DESC
 LIMIT 5;
 ```
 
+For more query examples, see [docs/queries.md](docs/queries.md).
+
 ### Mistral agent
 
 From the repo root (so that `scripts` is on `PYTHONPATH`), or from `scripts/`:
