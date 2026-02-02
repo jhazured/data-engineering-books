@@ -1,10 +1,10 @@
 # Load Books into Snowflake AI
 
+[![Verify](https://github.com/jhazured/data-engineering-books/actions/workflows/verify.yml/badge.svg)](https://github.com/jhazured/data-engineering-books/actions/workflows/verify.yml)
+[![Last commit](https://img.shields.io/github/last-commit/jhazured/data-engineering-books?color=blue)](https://github.com/jhazured/data-engineering-books)
 [![Snowflake](https://img.shields.io/badge/Snowflake-Compatible-blue.svg)](https://www.snowflake.com/)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
 [![Mistral LLM](https://img.shields.io/badge/Mistral-7B_Instruct-green.svg)](https://huggingface.co/mistralai)
-
-*Add a CI/CD badge here if you set up GitHub Actions; a "last updated" badge is also useful. Screenshots or a short demo GIF of queries and results make the project more compelling.*
 
 Ingest PDF books into Snowflake, split them into text chunks, and create embeddings using Snowflake AI for semantic search. Optionally use the Mistral agent (LangChain + Hugging Face) for Q&A, RAG, and SQL over your book content.
 
@@ -33,6 +33,10 @@ python scripts/verify_setup.py
 
 Then query in Snowflake (see [Query embeddings](#query-embeddings)) or use the [Mistral agent](#mistral-agent) from Python.
 
+### Demo / screenshots
+
+*Add a short demo GIF or screenshots here (e.g. Snowflake worksheet with a vector search query and results, or Mistral agent Q&A) to make the project more compelling for recruiters and viewers.*
+
 ---
 
 ## Project structure
@@ -40,7 +44,7 @@ Then query in Snowflake (see [Query embeddings](#query-embeddings)) or use the [
 | Path | Description |
 |------|-------------|
 | `books_pdf_folder/` | PDF books to ingest (place your `.pdf` files here). **PDFs are not included in this repository.** Users must source their own legally obtained PDF copies. |
-| `scripts/load_books_to_snowflake.py` | Extract text from PDFs, chunk, upload to Snowflake, create `books` and `book_embeddings` tables. |
+| `scripts/load_books_to_snowflake.py` | Extract text from PDFs, chunk, upload to Snowflake; adds metadata (author, publication_year, section_title) from PDF metadata and per-page headings. Creates `books` and `book_embeddings` tables. |
 | `scripts/mistral_snowflake_agent.py` | Mistral LLM agent: Q&A, RAG from vector DB, SQL execution in Snowflake, Pandas/CSV agent. |
 | `scripts/snowflake_helper.py` | Snowflake helper used by the Mistral agent to run SQL (reads config from `.env` or env vars). |
 | `.env.example` | Template for Snowflake and Hugging Face credentials; copy to `.env` and fill in. |
@@ -58,7 +62,7 @@ PDFs (books_pdf_folder/)
     → Vector search (SQL) or Mistral agent (RAG, Q&A, SQL over Snowflake)
 ```
 
-- **PDFs** → Python script extracts text, splits into chunks (default 1000 chars).
+- **PDFs** → Python script extracts text and PDF metadata (author, publication year), infers section/chapter titles from the first short line per page, splits into chunks (default 1000 chars).
 - **Snowflake** → `books` table stores chunks; `book_embeddings` adds vectors via Snowflake AI (`AI_EMBED_TEXT`, default model `text-embedding-3-large`; vector dimensionality is model-dependent—see Snowflake docs).
 - **Consumption** → Query embeddings with `VECTOR_SIMILARITY` in SQL, or use the Mistral agent for RAG, Q&A, and SQL generation.
 
@@ -220,7 +224,7 @@ If no PDFs are found, it prints a message and exits without connecting to Snowfl
 ✅ All books loaded and embeddings created!
 ```
 
-**Expected results:** Tables `books` (columns: `book_id`, `chunk_id`, `content`) and `book_embeddings` (columns: `book_id`, `chunk_id`, `content`, `vector`) are created or replaced. Row count in `books` equals total chunks across all PDFs.
+**Expected results:** Tables `books` and `book_embeddings` are created or replaced with columns: `book_id`, `chunk_id`, `content`, `author`, `publication_year`, `section_title`, and `vector` (embeddings only). Author and publication year come from PDF metadata; section/chapter titles are inferred from the first short line per page. Row count in `books` equals total chunks across all PDFs.
 
 ### Query embeddings
 
@@ -236,6 +240,16 @@ LIMIT 3;
 ```
 
 **Expected results:** Returns the top 3 text chunks most similar to the query (e.g. "Explain ETL concepts"). Each row is a chunk of book content; use `content` for display or downstream RAG.
+
+Filter or display by metadata (author, publication_year, section_title):
+
+```sql
+SELECT author, publication_year, section_title, content
+FROM book_embeddings
+WHERE author ILIKE '%Kleppmann%'
+ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('Explain ETL concepts'), vector) DESC
+LIMIT 5;
+```
 
 ### Mistral agent
 
@@ -299,7 +313,7 @@ Measure with your own data; scale warehouse or chunk size as needed.
 
 - **Secrets:** Do not commit `.env`. It is listed in `.gitignore`.
 - **Scanned PDFs:** Image-only PDFs may need OCR before ingesting.
-- **Metadata:** Consider adding book title, author, or other metadata for richer queries.
+- **Metadata:** The loader adds `author`, `publication_year`, and `section_title` (from PDF metadata and per-page first line). Use these in SQL for filtering and display (e.g. `WHERE author = '...'`, `ORDER BY publication_year`).
 - **Chunk size:** Smaller chunks give more precise retrieval; larger chunks give more context per chunk.
 
 ---
@@ -329,6 +343,5 @@ This project is set up for **local development**. To productionize or harden:
 ## Optional enhancements
 
 - Detect and run OCR on image-only PDFs.
-- Add chapter/section titles to chunks or metadata.
-- Add columns such as `author`, `publication_year` for filtering and display.
+- Chapter/section titles and author/publication_year are now included (see [Load books](#load-books-and-create-embeddings)).
 - Extend the Mistral agent (e.g. more tools, different models).
