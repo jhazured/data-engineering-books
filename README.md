@@ -28,12 +28,15 @@ pip install -r requirements.txt
 cp .env.example .env
 # Edit .env with your Snowflake and Hugging Face values.
 
-# 3. Place your PDFs in books_pdf_folder/
+# 3. (Optional) Create Snowflake warehouse/database/schema if needed
+python scripts/snowflake_startup.py
 
-# 4. Load books and create embeddings in Snowflake
+# 4. Place your PDFs in books_pdf_folder/
+
+# 5. Load books and create embeddings in Snowflake
 python scripts/load_books_to_snowflake.py
 
-# 5. Verify setup (optional)
+# 6. Verify setup (optional)
 python scripts/verify_setup.py
 ```
 
@@ -49,6 +52,7 @@ Then query in Snowflake (see [Query embeddings](#query-embeddings)) or use the [
 | `scripts/load_books_to_snowflake.py` | Extract text from PDFs, chunk, upload to Snowflake; adds metadata (author, publication_year, section_title) from PDF metadata and per-page headings. Creates `books` and `book_embeddings` tables. |
 | `scripts/mistral_snowflake_agent.py` | Mistral LLM agent: Q&A, RAG from vector DB, SQL execution in Snowflake, Pandas/CSV agent. |
 | `scripts/snowflake_helper.py` | Snowflake helper used by the Mistral agent to run SQL (reads config from `.env` or env vars). |
+| `scripts/snowflake_startup.py` | One-time setup: creates Snowflake warehouse, database, and schema if they don't exist (uses `.env`). |
 | `.env.example` | Template for Snowflake and Hugging Face credentials; copy to `.env` and fill in. |
 | `requirements.txt` | Python dependencies (key versions pinned for reproducibility; see [Dependencies](#dependencies)). |
 | `scripts/verify_setup.py` | Verify Python packages and optional Snowflake connectivity. |
@@ -148,6 +152,16 @@ python scripts/verify_setup.py
 ```
 
 This checks that required packages are installed, `.env` exists, and optionally tests the Snowflake connection.
+
+**Create Snowflake objects (optional, first-time or new account):**
+
+If your account does not yet have the warehouse, database, or schema from `.env`, run:
+
+```bash
+python scripts/snowflake_startup.py
+```
+
+This creates the warehouse (X-SMALL, auto-suspend 60s), database, and schema if they don't exist. If you already use an existing warehouse/database/schema, skip this step.
 
 ### 2. Snowflake credentials
 

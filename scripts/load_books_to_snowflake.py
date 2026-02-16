@@ -1,9 +1,19 @@
 import os
 import re
+import sys
 import pdfplumber
 import snowflake.connector
 from snowflake.connector.pandas_tools import write_pandas
+import snowflake.connector.errors as snowflake_errors
 import pandas as pd
+
+INSERT_BATCH_SIZE = 500
+
+
+def _log(msg: str) -> None:
+    """Print and flush so progress appears immediately."""
+    print(msg)
+    sys.stdout.flush()
 
 # Ensure we can resolve snowflake_helper for config
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -106,16 +116,23 @@ def chunk_text_with_sections(pages_with_sections, chunk_size=CHUNK_SIZE):
 def load_books():
     """Extract PDFs from books_pdf_folder, chunk, and return a DataFrame. One bad PDF does not stop the run."""
     data_rows = []
-    for filename in sorted(os.listdir(PDF_FOLDER)):
-        if not filename.lower().endswith(".pdf"):
-            continue
+    if not os.path.isdir(PDF_FOLDER):
+        _log(f"PDF folder not found: {PDF_FOLDER}")
+        return pd.DataFrame(data_rows)
+    pdf_files = sorted(f for f in os.listdir(PDF_FOLDER) if f.lower().endswith(".pdf"))
+    if not pdf_files:
+        _log(f"No PDF files in {PDF_FOLDER}")
+        return pd.DataFrame(data_rows)
+    _log(f"Found {len(pdf_files)} PDF(s). Extracting text and chunking...")
+    for filename in pdf_files:
         pdf_path = os.path.join(PDF_FOLDER, filename)
         try:
-            print(f"Processing {filename}...")
+            _log(f"  Processing {filename}...")
             book_id = os.path.splitext(filename)[0]
             author, publication_year = get_pdf_metadata(pdf_path)
             pages = list(extract_pages_with_sections(pdf_path))
             chunks_with_sections = chunk_text_with_sections(pages, CHUNK_SIZE)
+            n_chunks = 0
             for idx, (chunk, section_title) in enumerate(chunks_with_sections):
                 data_rows.append({
                     "book_id": book_id,
@@ -125,8 +142,10 @@ def load_books():
                     "publication_year": publication_year if publication_year is not None else None,
                     "section_title": section_title,
                 })
+                n_chunks += 1
+            _log(f"  Loaded {filename}: {n_chunks} chunks")
         except Exception as e:
-            print(f"Skipping {filename}: {e}")
+            _log(f"  Skipping {filename}: {e}")
             continue
     return pd.DataFrame(data_rows)
 
@@ -134,12 +153,25 @@ def load_books():
 def main():
     df = load_books()
     if df.empty:
-        print("No PDFs found in books_pdf_folder. Add PDFs and run again.")
+        _log("No PDFs found in books_pdf_folder. Add PDFs and run again.")
         return
 
+    _log(f"Total chunks: {len(df)}. Connecting to Snowflake...")
     config = get_snowflake_config()
+    database = (config.get("database") or "").strip().upper()
+    schema = (config.get("schema") or "PUBLIC").strip().upper()
+    if not database or not schema:
+        _log("Error: SNOWFLAKE_DATABASE and SNOWFLAKE_SCHEMA must be set in .env")
+        return
+    if not all(c.isalnum() or c == "_" for c in database + schema):
+        _log("Error: SNOWFLAKE_DATABASE and SNOWFLAKE_SCHEMA must be alphanumeric (or underscore)")
+        return
     conn = snowflake.connector.connect(**config)
     try:
+        with conn.cursor() as cs:
+            cs.execute(f"USE DATABASE {database}")
+            cs.execute(f"USE SCHEMA {schema}")
+        _log(f"Using database={database}, schema={schema}. Creating BOOKS table and uploading chunks...")
         with conn.cursor() as cs:
             cs.execute("""
                 CREATE OR REPLACE TABLE books (
@@ -151,21 +183,45 @@ def main():
                     section_title STRING
                 )
             """)
-        write_pandas(conn, df, "BOOKS")
-        with conn.cursor() as cs:
-            cs.execute(f"""
-                CREATE OR REPLACE TABLE book_embeddings AS
-                SELECT
-                    book_id,
-                    chunk_id,
-                    content,
-                    author,
-                    publication_year,
-                    section_title,
-                    AI_EMBED_TEXT(content, '{EMBEDDING_MODEL}') AS vector
-                FROM books
-            """)
-        print("All books loaded and embeddings created.")
+        try:
+            write_pandas(conn, df, "BOOKS")
+            _log(f"  Uploaded {len(df)} rows to BOOKS.")
+        except (snowflake_errors.MissingDependencyError, Exception) as e:
+            if "pandas" in str(e).lower() or isinstance(e, snowflake_errors.MissingDependencyError):
+                _log("  write_pandas skipped (pandas dependency); inserting in batches...")
+            cols = ["book_id", "chunk_id", "content", "author", "publication_year", "section_title"]
+            rows = list(df[cols].itertuples(index=False, name=None))
+            with conn.cursor() as cs:
+                for i in range(0, len(rows), INSERT_BATCH_SIZE):
+                    batch = rows[i : i + INSERT_BATCH_SIZE]
+                    cs.executemany(
+                        "INSERT INTO books (book_id, chunk_id, content, author, publication_year, section_title) VALUES (%s, %s, %s, %s, %s, %s)",
+                        batch,
+                    )
+                    _log(f"  Inserted rows {i + 1}-{i + len(batch)} of {len(df)}...")
+            _log(f"  Uploaded {len(df)} rows to BOOKS.")
+        _log("Creating embeddings (AI_EMBED_TEXT); this may take several minutes...")
+        try:
+            with conn.cursor() as cs:
+                cs.execute(f"""
+                    CREATE OR REPLACE TABLE book_embeddings AS
+                    SELECT
+                        book_id,
+                        chunk_id,
+                        content,
+                        author,
+                        publication_year,
+                        section_title,
+                        AI_EMBED_TEXT(content, '{EMBEDDING_MODEL}') AS vector
+                    FROM books
+                """)
+            _log("Done. All books loaded and embeddings created.")
+        except snowflake_errors.ProgrammingError as e:
+            if "AI_EMBED_TEXT" in str(e) or "Unknown function" in str(e):
+                _log("  Skipped: AI_EMBED_TEXT is not available on this account (Cortex AI may be disabled or in a different region).")
+                _log("Done. All books loaded into BOOKS table. Query BOOKS directly; book_embeddings was not created.")
+            else:
+                raise
     finally:
         conn.close()
 
