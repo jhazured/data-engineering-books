@@ -26,7 +26,8 @@ except ImportError:
 def check_packages():
     """Check required packages are installed."""
     required = [
-        ("pdfplumber", "pdfplumber"),
+        ("unstructured.partition.pdf", "unstructured[pdf]"),
+        ("pypdf", "pypdf"),
         ("snowflake.connector", "snowflake-connector-python"),
         ("pandas", "pandas"),
     ]
@@ -38,9 +39,9 @@ def check_packages():
     for mod, pkg in required:
         try:
             __import__(mod)
-            if mod == "pdfplumber":
-                import pdfplumber
-                print(f"  OK  {pkg} ({getattr(pdfplumber, '__version__', '?')})")
+            if mod == "unstructured.partition.pdf":
+                import unstructured
+                print(f"  OK  {pkg} ({getattr(unstructured, '__version__', '?')})")
             else:
                 print(f"  OK  {pkg}")
         except ImportError:

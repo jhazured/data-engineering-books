@@ -167,21 +167,28 @@ def partition_and_chunk_pdf(pdf_path):
         metadata = chunk.metadata
         
         # Extract section title from metadata if available
-        # Unstructured tracks hierarchy and section context
+        # Unstructured metadata can be a dict or object; support both
+        def _get(obj, key, default=None):
+            if obj is None:
+                return default
+            if isinstance(obj, dict):
+                return obj.get(key, default)
+            return getattr(obj, key, default)
+
         section_title = None
-        if hasattr(metadata, 'category') and metadata.category == 'Title':
-            section_title = content[:120]  # Use first 120 chars of title chunks
-        elif hasattr(chunk, 'category') and chunk.category == 'Title':
-            section_title = content[:120]
-        
-        # Try to get parent/section from metadata
-        if not section_title and hasattr(metadata, 'parent_id'):
-            # Look for parent title in elements
-            for elem in elements:
-                if hasattr(elem.metadata, 'element_id') and elem.metadata.element_id == metadata.parent_id:
-                    if elem.category == 'Title':
-                        section_title = elem.text[:120]
-                        break
+        cat = _get(metadata, 'category') or getattr(chunk, 'category', None)
+        if cat == 'Title':
+            section_title = (content or '')[:120]
+        if not section_title:
+            parent_id = _get(metadata, 'parent_id')
+            if parent_id:
+                for elem in elements:
+                    eid = _get(getattr(elem, 'metadata', None), 'element_id')
+                    if eid == parent_id:
+                        elem_cat = getattr(elem, 'category', None) or _get(getattr(elem, 'metadata', None), 'category')
+                        if elem_cat == 'Title':
+                            section_title = (getattr(elem, 'text', None) or '')[:120]
+                            break
         
         chunk_data.append({
             'chunk_id': idx,
@@ -253,7 +260,7 @@ def main():
     # Check if unstructured is installed
     try:
         import unstructured
-        _log(f"✓ Unstructured.io version: {unstructured.__version__}")
+        _log(f"✓ Unstructured.io version: {getattr(unstructured, '__version__', '?')}")
     except ImportError:
         _log("✗ ERROR: unstructured library not found")
         _log("  Install with: pip install 'unstructured[pdf]'")
@@ -360,7 +367,7 @@ def main():
             _log(f"  • Overlap: {CHUNK_OVERLAP} characters")
             _log("")
             _log("Next steps:")
-            _log("  1. Test semantic search with improved queries from COMMON_QUERIES_IMPROVED.md")
+            _log("  1. Test semantic search with queries from docs/queries.md")
             _log("  2. Check section_title quality: SELECT DISTINCT section_title FROM book_embeddings;")
             _log("  3. Compare results to previous chunking approach")
             

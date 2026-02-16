@@ -123,8 +123,8 @@ pip install "unstructured[pdf]"
 ## Next Steps
 
 1. Install dependencies
-2. Run: `python scripts/load_books_unstructured.py`
-3. Test semantic search with queries from COMMON_QUERIES_IMPROVED.md
+2. Run: `python scripts/load_books_to_snowflake.py`
+3. Test semantic search with queries from `docs/queries.md`
 4. Compare results to previous pdfplumber approach
 
 ## References
