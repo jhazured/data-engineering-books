@@ -54,6 +54,8 @@ Then query in Snowflake (see [Query embeddings](#query-embeddings)) or use the [
 | `scripts/snowflake_helper.py` | Snowflake helper used by the Mistral agent to run SQL (reads config from `.env` or env vars). |
 | `scripts/snowflake_startup.py` | One-time setup: creates Snowflake warehouse, database, and schema if they don't exist (uses `.env`). |
 | `scripts/snowflake_teardown.py` | Teardown: drops the project database and warehouse (prompts for confirmation unless `--force`). |
+| `docs/queries.md` | Semantic search query examples (markdown). |
+| `docs/workbook.ipynb` | Snowflake notebook version of the queries (import into Snowsight). Generate with `python scripts/queries_to_workbook.py`. |
 | `.env.example` | Template for Snowflake and Hugging Face credentials; copy to `.env` and fill in. |
 | `requirements.txt` | Python dependencies (key versions pinned for reproducibility; see [Dependencies](#dependencies)). |
 | `scripts/verify_setup.py` | Verify Python packages and optional Snowflake connectivity. |
