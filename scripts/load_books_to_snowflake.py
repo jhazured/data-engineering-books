@@ -38,8 +38,8 @@ except ImportError:
 PDF_FOLDER = os.path.join(_REPO_ROOT, "books_pdf_folder")
 
 # IMPROVED CHUNKING PARAMETERS
-CHUNK_SIZE = 1500  # Larger chunks preserve more context
-CHUNK_OVERLAP = 250  # Overlap prevents splitting concepts across chunks
+CHUNK_SIZE = 2000  # Larger chunks preserve more complete concepts
+CHUNK_OVERLAP = 400  # Larger overlap prevents concept splitting
 MAX_SECTION_TITLE_LEN = 120
 
 # Snowflake Cortex embedding model (use AI_EMBED). See docs/cortex-setup.md to enable Cortex.
@@ -73,10 +73,9 @@ def get_pdf_metadata(pdf_path):
 
 def _extract_section_title(text, max_len=MAX_SECTION_TITLE_LEN):
     """
-    Extract section title from text. Looks for:
-    1. Lines starting with Chapter/Section/Part + number
-    2. Short lines (potential headers)
-    3. Lines in ALL CAPS or Title Case
+    Extract section title from text - CONSERVATIVE approach.
+    Only accepts clear headers: Chapter/Section/Part + number/name
+    Otherwise returns None rather than guessing.
     """
     if not text or not text.strip():
         return None
@@ -85,27 +84,28 @@ def _extract_section_title(text, max_len=MAX_SECTION_TITLE_LEN):
     if not lines:
         return None
     
-    # Check first few lines for headers
+    # Only check first 5 lines for headers
+    for line in lines[:5]:
+        # STRICT Pattern: Only Chapter/Section/Part/Appendix with number or clear title
+        # Examples: "Chapter 5", "Chapter 5: Replication", "Part II: Distributed Data"
+        chapter_pattern = re.match(
+            r"^(Chapter|Section|Part|Appendix|CHAPTER|SECTION|PART|APPENDIX)\s+(\d+|[IVX]+)(\s*[:.\-]\s*.+)?$", 
+            line, 
+            re.IGNORECASE
+        )
+        if chapter_pattern:
+            # Clean up the title
+            title = line.strip()
+            # Remove excessive punctuation at the end
+            title = re.sub(r'[.,:;]+$', '', title)
+            return title[:max_len]
+    
+    # Fallback: Look for lines that are ALL CAPS and reasonably short (likely major section headers)
     for line in lines[:3]:
-        # Pattern 1: Chapter/Section/Part headings
-        if re.match(r"^(Chapter|Section|Part|Appendix)\s+\d+", line, re.IGNORECASE):
+        if line.isupper() and 5 <= len(line) <= 50 and not re.search(r'\d{3,}', line):
             return line[:max_len]
-        
-        # Pattern 2: Short lines that look like headers (not too short, not too long)
-        if 10 <= len(line) <= max_len:
-            # Check if it's in Title Case or ALL CAPS (likely a header)
-            words = line.split()
-            if len(words) >= 2:
-                title_case = sum(1 for w in words if w and w[0].isupper()) >= len(words) * 0.7
-                all_caps = line.isupper()
-                if title_case or all_caps:
-                    return line[:max_len]
     
-    # Fallback: return first line if it's reasonably short
-    first_line = lines[0]
-    if len(first_line) <= max_len:
-        return first_line
-    
+    # No clear header found - return None rather than garbage
     return None
 
 
@@ -121,7 +121,8 @@ def extract_pages_with_sections(pdf_path):
 def chunk_text_with_overlap(pages_with_sections, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP):
     """
     Chunk text with overlap to preserve context across boundaries.
-    Also includes section title as context in the chunk content itself.
+    Includes section title as context ONLY when we have a valid section title.
+    Tries to break at paragraph boundaries when possible.
     """
     full_parts = []
     section_by_start = {}
@@ -129,7 +130,7 @@ def chunk_text_with_overlap(pages_with_sections, chunk_size=CHUNK_SIZE, overlap=
     
     for page_text, section_title in pages_with_sections:
         full_parts.append(page_text)
-        if page_text.strip():
+        if page_text.strip() and section_title:  # Only track valid section titles
             section_by_start[start] = section_title
         start += len(page_text) + 1
     
@@ -148,17 +149,25 @@ def chunk_text_with_overlap(pages_with_sections, chunk_size=CHUNK_SIZE, overlap=
             pos += chunk_size - overlap
             continue
         
-        # Find the most recent section title for this position
+        # Try to break at paragraph boundary (double newline) if we're within 200 chars of target
+        if chunk_end < len(full_text):
+            # Look for paragraph break in the last 200 chars of chunk
+            search_start = max(0, len(chunk) - 200)
+            paragraph_break = chunk.rfind('\n\n', search_start)
+            if paragraph_break > search_start:
+                chunk = chunk[:paragraph_break].strip()
+        
+        # Find the most recent VALID section title for this position
         section_title = None
         for s, title in sorted(section_by_start.items(), reverse=True):
             if s <= pos:
                 section_title = title
                 break
         
-        # IMPROVEMENT: Prepend section context to chunk content for better embeddings
-        # This helps the embedding model understand the context of technical terms
+        # Only add section context if we have a valid section title
+        # This prevents garbage like "[Section: delivered out of order...]"
         if section_title:
-            content_with_context = f"[Section: {section_title}]\n\n{chunk}"
+            content_with_context = f"[{section_title}]\n\n{chunk}"
         else:
             content_with_context = chunk
         
