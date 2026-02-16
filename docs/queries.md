@@ -2,6 +2,8 @@
 
 Useful queries for semantic search over the book embeddings. Run these in a Snowflake worksheet or via the Snowflake CLI.
 
+> **Note**: With the improved chunking strategy (larger chunks + overlap + section context), these queries use natural language phrasing instead of keyword stuffing for better semantic search results.
+
 ## Quick reference
 
 | Category | Jump to |
@@ -20,9 +22,12 @@ Useful queries for semantic search over the book embeddings. Run these in a Snow
 
 Find chunks most relevant to a concept:
 ```sql
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'exactly-once delivery semantics'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'How do exactly-once delivery semantics work?'), 
+    vector
+) DESC
 LIMIT 5;
 ```
 
@@ -32,10 +37,13 @@ LIMIT 5;
 
 Search within a specific book:
 ```sql
-SELECT section_title, content
+SELECT section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
 WHERE book_id ILIKE '%kleppmann%' OR author ILIKE '%kleppmann%'
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'write-ahead logging'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'write-ahead logging'), 
+    vector
+) DESC
 LIMIT 5;
 ```
 
@@ -45,10 +53,16 @@ LIMIT 5;
 
 Find how different authors cover the same topic:
 ```sql
-SELECT book_id, author, section_title, content
+SELECT book_id, author, section_title, LEFT(content, 300) AS content_preview
 FROM book_embeddings
-WHERE VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'batch vs stream processing'), vector) > 0.7
-ORDER BY book_id, VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'batch vs stream processing'), vector) DESC;
+WHERE VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'What are the tradeoffs between batch and stream processing?'), 
+    vector
+) > 0.65
+ORDER BY book_id, VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'What are the tradeoffs between batch and stream processing?'), 
+    vector
+) DESC;
 ```
 
 ---
@@ -58,75 +72,159 @@ ORDER BY book_id, VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1
 ### Data modeling
 ```sql
 -- Dimensional modeling (Kimball)
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'star schema fact and dimension tables'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'What is a star schema in data warehousing?'), 
+    vector
+) DESC
 LIMIT 5;
 
 -- Slowly changing dimensions
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'slowly changing dimension type 2 SCD'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'How do you handle slowly changing dimensions?'), 
+    vector
+) DESC
+LIMIT 5;
+
+-- Data vault modeling
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
+FROM book_embeddings
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'What is data vault modeling?'), 
+    vector
+) DESC
 LIMIT 5;
 ```
 
 ### Streaming
 ```sql
 -- Event time vs processing time
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'event time processing time watermarks'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'How do watermarks handle late-arriving events?'), 
+    vector
+) DESC
 LIMIT 5;
 
 -- Exactly-once semantics
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'exactly-once delivery guarantees idempotent'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'How do you achieve exactly-once delivery guarantees?'), 
+    vector
+) DESC
+LIMIT 5;
+
+-- Windowing strategies
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
+FROM book_embeddings
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'What are tumbling and sliding windows in stream processing?'), 
+    vector
+) DESC
 LIMIT 5;
 ```
 
 ### Distributed systems
 ```sql
 -- CAP theorem
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'CAP theorem consistency availability partition tolerance'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'Explain the CAP theorem and its tradeoffs'), 
+    vector
+) DESC
 LIMIT 5;
 
 -- Replication strategies
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'leader follower replication consensus'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'How does leader-follower replication work?'), 
+    vector
+) DESC
+LIMIT 5;
+
+-- Consensus algorithms
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
+FROM book_embeddings
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'How do Paxos and Raft consensus algorithms work?'), 
+    vector
+) DESC
+LIMIT 5;
+
+-- Partition tolerance
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
+FROM book_embeddings
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'How do distributed systems handle network partitions?'), 
+    vector
+) DESC
 LIMIT 5;
 ```
 
 ### ETL and pipelines
 ```sql
 -- ETL vs ELT
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'ETL ELT extract transform load'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'What is the difference between ETL and ELT?'), 
+    vector
+) DESC
 LIMIT 5;
 
 -- Data quality
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'data quality validation testing'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'How do you validate data quality in pipelines?'), 
+    vector
+) DESC
+LIMIT 5;
+
+-- Incremental processing
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
+FROM book_embeddings
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'How do you implement incremental data processing?'), 
+    vector
+) DESC
 LIMIT 5;
 ```
 
 ### Spark
 ```sql
 -- Partitioning and shuffles
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'spark shuffle partition skew'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'How does Spark handle partition shuffling and data skew?'), 
+    vector
+) DESC
 LIMIT 5;
 
 -- Catalyst optimizer
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'catalyst optimizer query plan'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'How does the Catalyst optimizer work in Spark?'), 
+    vector
+) DESC
+LIMIT 5;
+
+-- RDD vs DataFrame vs Dataset
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
+FROM book_embeddings
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'What are the differences between RDD, DataFrame, and Dataset?'), 
+    vector
+) DESC
 LIMIT 5;
 ```
 
@@ -135,21 +233,39 @@ LIMIT 5;
 ## Interview prep queries
 ```sql
 -- "Explain the Lambda architecture"
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'lambda architecture batch layer speed layer'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'What is the Lambda architecture for data processing?'), 
+    vector
+) DESC
 LIMIT 5;
 
 -- "How do you handle late-arriving data?"
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'late arriving data watermark trigger'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'How do you handle late-arriving data in streaming systems?'), 
+    vector
+) DESC
 LIMIT 5;
 
 -- "What is a data lakehouse?"
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'lakehouse delta lake iceberg'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'What is a data lakehouse architecture?'), 
+    vector
+) DESC
+LIMIT 5;
+
+-- "Explain data partitioning strategies"
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
+FROM book_embeddings
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'What are common data partitioning strategies in distributed systems?'), 
+    vector
+) DESC
 LIMIT 5;
 ```
 
@@ -168,6 +284,16 @@ SELECT DISTINCT book_id, author, publication_year
 FROM book_embeddings
 WHERE publication_year IS NOT NULL
 ORDER BY publication_year DESC;
+
+-- Average chunk length
+SELECT 
+    book_id,
+    AVG(LENGTH(content)) AS avg_chunk_length,
+    MIN(LENGTH(content)) AS min_chunk_length,
+    MAX(LENGTH(content)) AS max_chunk_length
+FROM book_embeddings
+GROUP BY book_id
+ORDER BY avg_chunk_length DESC;
 ```
 
 ---
@@ -175,21 +301,39 @@ ORDER BY publication_year DESC;
 ## Kafka and event-driven
 ```sql
 -- Consumer groups and offsets
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'kafka consumer group offset commit'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'How do Kafka consumer groups manage offsets?'), 
+    vector
+) DESC
 LIMIT 5;
 
 -- Event sourcing vs CDC
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'event sourcing change data capture CDC'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'What is the difference between event sourcing and change data capture?'), 
+    vector
+) DESC
 LIMIT 5;
 
 -- Kafka partitioning strategies
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'kafka partition key ordering guarantees'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'How does Kafka partition messages and maintain ordering?'), 
+    vector
+) DESC
+LIMIT 5;
+
+-- Kafka delivery guarantees
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
+FROM book_embeddings
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'What are Kafka delivery guarantees: at-most-once, at-least-once, exactly-once?'), 
+    vector
+) DESC
 LIMIT 5;
 ```
 
@@ -197,22 +341,40 @@ LIMIT 5;
 
 ## Data warehouse architecture
 ```sql
--- Kimball vs Inmon (you'll mainly get Kimball, but useful to see what's covered)
-SELECT book_id, section_title, content
+-- Kimball dimensional modeling
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'enterprise data warehouse dimensional modeling conformed dimensions'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'What is Kimball dimensional modeling with conformed dimensions?'), 
+    vector
+) DESC
 LIMIT 5;
 
 -- Fact table grain
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'fact table grain atomic transaction'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'How do you define the grain of a fact table?'), 
+    vector
+) DESC
 LIMIT 5;
 
 -- Surrogate keys
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'surrogate key natural key dimension'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'What are surrogate keys versus natural keys in dimensions?'), 
+    vector
+) DESC
+LIMIT 5;
+
+-- Aggregate tables
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
+FROM book_embeddings
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'How do you design aggregate fact tables for performance?'), 
+    vector
+) DESC
 LIMIT 5;
 ```
 
@@ -221,15 +383,30 @@ LIMIT 5;
 ## Cloud and modern stack
 ```sql
 -- Data lake organization
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'data lake bronze silver gold medallion'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'What is the medallion architecture for data lakes?'), 
+    vector
+) DESC
 LIMIT 5;
 
 -- Object storage patterns
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'S3 object storage parquet partitioning'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'How do you organize Parquet files in S3 for optimal performance?'), 
+    vector
+) DESC
+LIMIT 5;
+
+-- Table formats
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
+FROM book_embeddings
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'What are Delta Lake, Iceberg, and Hudi table formats?'), 
+    vector
+) DESC
 LIMIT 5;
 ```
 
@@ -238,21 +415,39 @@ LIMIT 5;
 ## Performance and optimization
 ```sql
 -- Query optimization
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'query optimization indexing predicate pushdown'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'How do you optimize slow database queries?'), 
+    vector
+) DESC
 LIMIT 5;
 
 -- Data skew
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'data skew hot partition salting'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'How do you handle data skew in distributed processing?'), 
+    vector
+) DESC
 LIMIT 5;
 
 -- Caching strategies
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'caching materialized view precompute'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'What are effective caching strategies for data pipelines?'), 
+    vector
+) DESC
+LIMIT 5;
+
+-- Indexing strategies
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
+FROM book_embeddings
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'What types of database indexes should I use?'), 
+    vector
+) DESC
 LIMIT 5;
 ```
 
@@ -261,21 +456,39 @@ LIMIT 5;
 ## Reliability and operations
 ```sql
 -- Idempotency
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'idempotent operation retry deduplication'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'How do you make data pipelines idempotent?'), 
+    vector
+) DESC
 LIMIT 5;
 
 -- Backfilling
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'backfill historical data reprocessing'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'How do you backfill historical data safely?'), 
+    vector
+) DESC
 LIMIT 5;
 
 -- Schema evolution
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'schema evolution backward forward compatibility'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'How do you handle schema evolution with backward compatibility?'), 
+    vector
+) DESC
+LIMIT 5;
+
+-- Monitoring and alerting
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
+FROM book_embeddings
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'What should you monitor in data pipelines?'), 
+    vector
+) DESC
 LIMIT 5;
 ```
 
@@ -284,27 +497,57 @@ LIMIT 5;
 ## Concepts you'll get asked about
 ```sql
 -- "What's the difference between OLTP and OLAP?"
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'OLTP OLAP transactional analytical workload'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'What is the difference between OLTP and OLAP databases?'), 
+    vector
+) DESC
 LIMIT 5;
 
 -- "Explain normalization vs denormalization"
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'normalization denormalization third normal form'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'When should you normalize versus denormalize data?'), 
+    vector
+) DESC
 LIMIT 5;
 
 -- "How do distributed transactions work?"
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'two-phase commit distributed transaction coordinator'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'How does two-phase commit work in distributed transactions?'), 
+    vector
+) DESC
 LIMIT 5;
 
 -- "What is eventual consistency?"
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'eventual consistency strong consistency linearizable'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'What is eventual consistency versus strong consistency?'), 
+    vector
+) DESC
+LIMIT 5;
+
+-- "Explain ACID properties"
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
+FROM book_embeddings
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'What are ACID properties in database transactions?'), 
+    vector
+) DESC
+LIMIT 5;
+
+-- "What is BASE in distributed systems?"
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
+FROM book_embeddings
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'What is BASE in distributed systems?'), 
+    vector
+) DESC
 LIMIT 5;
 ```
 
@@ -315,28 +558,97 @@ LIMIT 5;
 Useful when you're stuck on something at work:
 ```sql
 -- Generic "why is my job slow"
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'performance bottleneck slow job optimization'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'Why is my data pipeline running slowly?'), 
+    vector
+) DESC
 LIMIT 5;
 
 -- Spark memory issues
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'spark out of memory executor driver spill'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'How do I fix Spark out of memory errors?'), 
+    vector
+) DESC
 LIMIT 5;
 
 -- Data pipeline failures
-SELECT book_id, section_title, content
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
 FROM book_embeddings
-ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'pipeline failure recovery checkpoint restart'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'How do you recover from pipeline failures?'), 
+    vector
+) DESC
+LIMIT 5;
+
+-- Duplicate data issues
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
+FROM book_embeddings
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'Why am I seeing duplicate records in my pipeline?'), 
+    vector
+) DESC
 LIMIT 5;
 ```
 
 ---
 
-## Notes
+## Hybrid search (keyword + semantic)
 
-- Adjust `LIMIT` based on how much context you need
-- Similarity threshold (e.g., `> 0.7`) filters out weak matches but may miss relevant content — experiment with your data
-- Combine with `section_title` filtering if you know the rough area (e.g., `WHERE section_title ILIKE '%Chapter 5%'`)
+For best results when you know specific technical terms:
+```sql
+-- Combine keyword filtering with semantic ranking
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
+FROM book_embeddings
+WHERE LOWER(content) LIKE '%replication%' 
+   OR LOWER(section_title) LIKE '%replication%'
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'How does leader-follower replication work?'), 
+    vector
+) DESC
+LIMIT 10;
+
+-- Find content about Kafka specifically
+SELECT book_id, section_title, LEFT(content, 500) AS content_preview
+FROM book_embeddings
+WHERE LOWER(content) LIKE '%kafka%'
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'How does Kafka achieve high throughput?'), 
+    vector
+) DESC
+LIMIT 10;
+```
+
+---
+
+## Tips for better results
+
+### Query phrasing guidelines
+- **✅ Use natural questions**: "How does X work?", "What is the difference between X and Y?"
+- **✅ Be specific about context**: "How do you handle data skew in Spark?" not just "data skew"
+- **❌ Avoid keyword stuffing**: Not "ETL ELT extract transform load" 
+- **❌ Don't repeat synonyms**: Not "leader follower replication consensus"
+
+### Content preview
+- Most queries use `LEFT(content, 500)` to preview first 500 characters
+- Adjust based on your needs: use full `content` if you want complete chunks
+- Or reduce to `LEFT(content, 200)` for quick scanning
+
+### Similarity thresholds
+- Typical good matches: 0.65-0.85 similarity score
+- Lower threshold (0.60) catches more results but may include less relevant content
+- Higher threshold (0.75) ensures quality but may miss relevant passages
+- Experiment with your specific dataset
+
+### Combining with filters
+- Use `WHERE book_id = '...'` to search within a specific book
+- Use `WHERE section_title ILIKE '%chapter%'` to narrow by section
+- Combine keyword `LIKE` filters with semantic search for precision
+
+### Performance notes
+- Vector similarity is computationally expensive
+- Add a `LIMIT` clause to every query (typically 5-10 results)
+- For production use, consider creating a similarity score threshold to filter before sorting
