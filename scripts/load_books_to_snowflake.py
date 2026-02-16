@@ -1,7 +1,27 @@
+"""
+Production-grade PDF loader using Unstructured.io for semantic chunking.
+
+This script uses Unstructured's document partitioning and chunking capabilities
+to properly handle technical books with complex structure.
+
+Requirements:
+    pip install unstructured[pdf] snowflake-connector-python pandas python-dotenv
+
+Optional for better quality (recommended):
+    pip install "unstructured[local-inference]"
+    
+    This requires:
+    - tesseract (for OCR)
+    - poppler (for PDF processing)
+    
+    Installation:
+    - macOS: brew install tesseract poppler
+    - Ubuntu: apt-get install tesseract-ocr poppler-utils
+    - Windows: see https://unstructured-io.github.io/unstructured/installing.html
+"""
+
 import os
-import re
 import sys
-import pdfplumber
 import snowflake.connector
 from snowflake.connector.pandas_tools import write_pandas
 import snowflake.connector.errors as snowflake_errors
@@ -14,6 +34,7 @@ def _log(msg: str) -> None:
     """Print and flush so progress appears immediately."""
     print(msg)
     sys.stdout.flush()
+
 
 # Ensure we can resolve snowflake_helper for config
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -28,7 +49,7 @@ except ImportError:
         sys.path.insert(0, _SCRIPT_DIR)
     import snowflake_helper
 
-# Load .env if available (unify with snowflake_helper config)
+# Load .env if available
 try:
     from dotenv import load_dotenv
     load_dotenv(os.path.join(_REPO_ROOT, ".env"))
@@ -37,12 +58,14 @@ except ImportError:
 
 PDF_FOLDER = os.path.join(_REPO_ROOT, "books_pdf_folder")
 
-# IMPROVED CHUNKING PARAMETERS
-CHUNK_SIZE = 2000  # Larger chunks preserve more complete concepts
-CHUNK_OVERLAP = 400  # Larger overlap prevents concept splitting
-MAX_SECTION_TITLE_LEN = 120
+# UNSTRUCTURED CHUNKING PARAMETERS
+# These are optimized for technical books with clear section structure
+CHUNK_MAX_CHARACTERS = 2000  # Hard maximum
+CHUNK_NEW_AFTER = 1800  # Soft maximum - start new chunk after this many chars
+CHUNK_COMBINE_UNDER = 500  # Combine small elements under this size
+CHUNK_OVERLAP = 300  # Overlap between chunks for context preservation
 
-# Snowflake Cortex embedding model (use AI_EMBED). See docs/cortex-setup.md to enable Cortex.
+# Snowflake Cortex embedding model
 EMBEDDING_MODEL = "snowflake-arctic-embed-m-v1.5"
 
 
@@ -52,137 +75,127 @@ def get_snowflake_config():
 
 
 def get_pdf_metadata(pdf_path):
-    """Extract author and publication year from PDF metadata."""
+    """Extract author and publication year from PDF metadata using pypdf."""
     author = "Unknown"
     publication_year = None
+    
     try:
-        with pdfplumber.open(pdf_path) as pdf:
-            meta = getattr(pdf, "metadata", None) or {}
-            author = meta.get("/Author") or meta.get("Author") or author
+        from pypdf import PdfReader
+        with open(pdf_path, 'rb') as f:
+            pdf = PdfReader(f)
+            meta = pdf.metadata or {}
+            
+            # Try different metadata fields
+            author = meta.get('/Author') or meta.get('Author') or author
             if isinstance(author, bytes):
                 author = author.decode("utf-8", errors="replace")
-            creation = meta.get("/CreationDate") or meta.get("CreationDate") or ""
-            if creation and isinstance(creation, str) and creation.startswith("D:") and len(creation) >= 6:
+            
+            # Extract year from creation date
+            creation = meta.get('/CreationDate') or meta.get('CreationDate') or ""
+            if isinstance(creation, str) and creation.startswith("D:") and len(creation) >= 6:
                 year_str = creation[2:6]
                 if year_str.isdigit():
                     publication_year = int(year_str)
-    except Exception:
-        pass
+    except Exception as e:
+        _log(f"    Warning: Could not extract metadata: {e}")
+    
     return author, publication_year
 
 
-def _extract_section_title(text, max_len=MAX_SECTION_TITLE_LEN):
+def partition_and_chunk_pdf(pdf_path):
     """
-    Extract section title from text - CONSERVATIVE approach.
-    Only accepts clear headers: Chapter/Section/Part + number/name
-    Otherwise returns None rather than guessing.
+    Use Unstructured.io to partition PDF and chunk by title.
+    
+    This approach:
+    1. Detects document structure (titles, paragraphs, lists, tables)
+    2. Preserves section boundaries when chunking
+    3. Combines related elements intelligently
+    4. Maintains hierarchical context
     """
-    if not text or not text.strip():
-        return None
+    try:
+        from unstructured.partition.pdf import partition_pdf
+        from unstructured.chunking.title import chunk_by_title
+    except ImportError as e:
+        _log("ERROR: unstructured library not installed properly.")
+        _log("Install with: pip install 'unstructured[pdf]'")
+        _log("For better quality, also install: pip install 'unstructured[local-inference]'")
+        raise e
     
-    lines = [line.strip() for line in text.strip().split("\n") if line.strip()]
-    if not lines:
-        return None
+    _log(f"    Partitioning PDF (detecting structure)...")
     
-    # Only check first 5 lines for headers
-    for line in lines[:5]:
-        # STRICT Pattern: Only Chapter/Section/Part/Appendix with number or clear title
-        # Examples: "Chapter 5", "Chapter 5: Replication", "Part II: Distributed Data"
-        chapter_pattern = re.match(
-            r"^(Chapter|Section|Part|Appendix|CHAPTER|SECTION|PART|APPENDIX)\s+(\d+|[IVX]+)(\s*[:.\-]\s*.+)?$", 
-            line, 
-            re.IGNORECASE
+    # Partition the PDF - this detects titles, paragraphs, lists, tables, etc.
+    # strategy="auto" will use the best available method
+    # For production, consider "hi_res" with local-inference installed
+    try:
+        elements = partition_pdf(
+            filename=pdf_path,
+            strategy="auto",  # Use "hi_res" if you have local-inference installed
+            infer_table_structure=True,  # Detect tables properly
+            include_page_breaks=False,
         )
-        if chapter_pattern:
-            # Clean up the title
-            title = line.strip()
-            # Remove excessive punctuation at the end
-            title = re.sub(r'[.,:;]+$', '', title)
-            return title[:max_len]
+        _log(f"    Detected {len(elements)} document elements")
+    except Exception as e:
+        _log(f"    Error during partitioning: {e}")
+        _log(f"    Falling back to fast strategy...")
+        elements = partition_pdf(
+            filename=pdf_path,
+            strategy="fast",
+            include_page_breaks=False,
+        )
+        _log(f"    Detected {len(elements)} document elements (fast mode)")
     
-    # Fallback: Look for lines that are ALL CAPS and reasonably short (likely major section headers)
-    for line in lines[:3]:
-        if line.isupper() and 5 <= len(line) <= 50 and not re.search(r'\d{3,}', line):
-            return line[:max_len]
+    # Chunk by title - this preserves section boundaries
+    _log(f"    Chunking by title (preserving section structure)...")
+    chunks = chunk_by_title(
+        elements=elements,
+        max_characters=CHUNK_MAX_CHARACTERS,  # Hard max
+        new_after_n_chars=CHUNK_NEW_AFTER,  # Soft max - prefer breaking here
+        combine_text_under_n_chars=CHUNK_COMBINE_UNDER,  # Combine tiny elements
+        overlap=CHUNK_OVERLAP,  # Overlap for context
+        overlap_all=True,  # Apply overlap between all chunks
+    )
     
-    # No clear header found - return None rather than garbage
-    return None
-
-
-def extract_pages_with_sections(pdf_path):
-    """Extract text from each page along with detected section titles."""
-    with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
-            page_text = page.extract_text() or ""
-            section_title = _extract_section_title(page_text)
-            yield page_text, section_title
-
-
-def chunk_text_with_overlap(pages_with_sections, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP):
-    """
-    Chunk text with overlap to preserve context across boundaries.
-    Includes section title as context ONLY when we have a valid section title.
-    Tries to break at paragraph boundaries when possible.
-    """
-    full_parts = []
-    section_by_start = {}
-    start = 0
+    _log(f"    Created {len(chunks)} semantic chunks")
     
-    for page_text, section_title in pages_with_sections:
-        full_parts.append(page_text)
-        if page_text.strip() and section_title:  # Only track valid section titles
-            section_by_start[start] = section_title
-        start += len(page_text) + 1
-    
-    full_text = "\n".join(full_parts)
-    
-    chunks = []
-    pos = 0
-    chunk_index = 0
-    
-    while pos < len(full_text):
-        # Calculate chunk boundaries
-        chunk_end = min(pos + chunk_size, len(full_text))
-        chunk = full_text[pos:chunk_end]
+    # Extract chunk data
+    chunk_data = []
+    for idx, chunk in enumerate(chunks):
+        # Get the text content
+        content = chunk.text
         
-        if not chunk.strip():
-            pos += chunk_size - overlap
-            continue
+        # Get metadata
+        metadata = chunk.metadata
         
-        # Try to break at paragraph boundary (double newline) if we're within 200 chars of target
-        if chunk_end < len(full_text):
-            # Look for paragraph break in the last 200 chars of chunk
-            search_start = max(0, len(chunk) - 200)
-            paragraph_break = chunk.rfind('\n\n', search_start)
-            if paragraph_break > search_start:
-                chunk = chunk[:paragraph_break].strip()
-        
-        # Find the most recent VALID section title for this position
+        # Extract section title from metadata if available
+        # Unstructured tracks hierarchy and section context
         section_title = None
-        for s, title in sorted(section_by_start.items(), reverse=True):
-            if s <= pos:
-                section_title = title
-                break
+        if hasattr(metadata, 'category') and metadata.category == 'Title':
+            section_title = content[:120]  # Use first 120 chars of title chunks
+        elif hasattr(chunk, 'category') and chunk.category == 'Title':
+            section_title = content[:120]
         
-        # Only add section context if we have a valid section title
-        # This prevents garbage like "[Section: delivered out of order...]"
-        if section_title:
-            content_with_context = f"[{section_title}]\n\n{chunk}"
-        else:
-            content_with_context = chunk
+        # Try to get parent/section from metadata
+        if not section_title and hasattr(metadata, 'parent_id'):
+            # Look for parent title in elements
+            for elem in elements:
+                if hasattr(elem.metadata, 'element_id') and elem.metadata.element_id == metadata.parent_id:
+                    if elem.category == 'Title':
+                        section_title = elem.text[:120]
+                        break
         
-        chunks.append((content_with_context, section_title))
-        chunk_index += 1
-        
-        # Move forward by (chunk_size - overlap) to create overlapping chunks
-        pos += chunk_size - overlap
+        chunk_data.append({
+            'chunk_id': idx,
+            'content': content,
+            'section_title': section_title,
+        })
     
-    return chunks
+    return chunk_data
 
 
 def load_books():
-    """Extract PDFs from books_pdf_folder, chunk with overlap, and return a DataFrame."""
+    """Extract PDFs using Unstructured.io and return a DataFrame."""
     data_rows = []
+    
     if not os.path.isdir(PDF_FOLDER):
         _log(f"PDF folder not found: {PDF_FOLDER}")
         return pd.DataFrame(data_rows)
@@ -192,55 +205,83 @@ def load_books():
         _log(f"No PDF files in {PDF_FOLDER}")
         return pd.DataFrame(data_rows)
     
-    _log(f"Found {len(pdf_files)} PDF(s). Extracting text and chunking...")
-    _log(f"Chunk settings: size={CHUNK_SIZE} chars, overlap={CHUNK_OVERLAP} chars")
+    _log(f"Found {len(pdf_files)} PDF(s).")
+    _log(f"Chunking settings: max={CHUNK_MAX_CHARACTERS}, soft_max={CHUNK_NEW_AFTER}, overlap={CHUNK_OVERLAP}")
+    _log("")
     
     for filename in pdf_files:
         pdf_path = os.path.join(PDF_FOLDER, filename)
         try:
-            _log(f"  Processing {filename}...")
+            _log(f"Processing: {filename}")
             book_id = os.path.splitext(filename)[0]
+            
+            # Get metadata
             author, publication_year = get_pdf_metadata(pdf_path)
+            _log(f"    Author: {author}, Year: {publication_year or 'Unknown'}")
             
-            pages = list(extract_pages_with_sections(pdf_path))
-            chunks_with_sections = chunk_text_with_overlap(pages, CHUNK_SIZE, CHUNK_OVERLAP)
+            # Partition and chunk with Unstructured
+            chunks = partition_and_chunk_pdf(pdf_path)
             
-            n_chunks = 0
-            for idx, (chunk, section_title) in enumerate(chunks_with_sections):
+            # Add to data rows
+            for chunk in chunks:
                 data_rows.append({
                     "book_id": book_id,
-                    "chunk_id": idx,
-                    "content": chunk,
+                    "chunk_id": chunk['chunk_id'],
+                    "content": chunk['content'],
                     "author": author,
-                    "publication_year": publication_year if publication_year is not None else None,
-                    "section_title": section_title,
+                    "publication_year": publication_year,
+                    "section_title": chunk['section_title'],
                 })
-                n_chunks += 1
             
-            _log(f"  Loaded {filename}: {n_chunks} chunks (with {CHUNK_OVERLAP}-char overlap)")
+            _log(f"    ✓ Completed: {len(chunks)} chunks")
+            _log("")
+            
         except Exception as e:
-            _log(f"  Skipping {filename}: {e}")
+            _log(f"    ✗ Error processing {filename}: {e}")
+            _log("")
             continue
     
     return pd.DataFrame(data_rows)
 
 
 def main():
+    _log("=" * 80)
+    _log("PDF LOADER - Using Unstructured.io for semantic chunking")
+    _log("=" * 80)
+    _log("")
+    
+    # Check if unstructured is installed
+    try:
+        import unstructured
+        _log(f"✓ Unstructured.io version: {unstructured.__version__}")
+    except ImportError:
+        _log("✗ ERROR: unstructured library not found")
+        _log("  Install with: pip install 'unstructured[pdf]'")
+        _log("  For better quality: pip install 'unstructured[local-inference]'")
+        return
+    
+    _log("")
+    
     df = load_books()
     if df.empty:
-        _log("No PDFs found in books_pdf_folder. Add PDFs and run again.")
+        _log("No PDFs processed. Add PDFs to books_pdf_folder and run again.")
         return
-
-    _log(f"Total chunks: {len(df)}. Connecting to Snowflake...")
+    
+    _log("=" * 80)
+    _log(f"Total chunks extracted: {len(df)}")
+    _log("=" * 80)
+    _log("")
+    _log("Connecting to Snowflake...")
+    
     config = get_snowflake_config()
     database = (config.get("database") or "").strip().upper()
     schema = (config.get("schema") or "PUBLIC").strip().upper()
     
     if not database or not schema:
-        _log("Error: SNOWFLAKE_DATABASE and SNOWFLAKE_SCHEMA must be set in .env")
+        _log("ERROR: SNOWFLAKE_DATABASE and SNOWFLAKE_SCHEMA must be set in .env")
         return
     if not all(c.isalnum() or c == "_" for c in database + schema):
-        _log("Error: SNOWFLAKE_DATABASE and SNOWFLAKE_SCHEMA must be alphanumeric (or underscore)")
+        _log("ERROR: SNOWFLAKE_DATABASE and SNOWFLAKE_SCHEMA must be alphanumeric (or underscore)")
         return
     
     conn = snowflake.connector.connect(**config)
@@ -249,7 +290,9 @@ def main():
             cs.execute(f"USE DATABASE {database}")
             cs.execute(f"USE SCHEMA {schema}")
         
-        _log(f"Using database={database}, schema={schema}. Creating BOOKS table and uploading chunks...")
+        _log(f"Using database={database}, schema={schema}")
+        _log("")
+        _log("Creating BOOKS table...")
         
         with conn.cursor() as cs:
             cs.execute("""
@@ -263,15 +306,19 @@ def main():
                 )
             """)
         
+        _log("Uploading chunks to Snowflake...")
+        
         # Upload data to BOOKS table
         try:
             write_pandas(conn, df, "BOOKS")
-            _log(f"  Uploaded {len(df)} rows to BOOKS.")
+            _log(f"  ✓ Uploaded {len(df)} rows to BOOKS")
         except (snowflake_errors.MissingDependencyError, Exception) as e:
             if "pandas" in str(e).lower() or isinstance(e, snowflake_errors.MissingDependencyError):
-                _log("  write_pandas skipped (pandas dependency); inserting in batches...")
+                _log("  write_pandas unavailable; inserting in batches...")
+            
             cols = ["book_id", "chunk_id", "content", "author", "publication_year", "section_title"]
             rows = list(df[cols].itertuples(index=False, name=None))
+            
             with conn.cursor() as cs:
                 for i in range(0, len(rows), INSERT_BATCH_SIZE):
                     batch = rows[i : i + INSERT_BATCH_SIZE]
@@ -280,9 +327,11 @@ def main():
                         batch,
                     )
                     _log(f"  Inserted rows {i + 1}-{i + len(batch)} of {len(df)}...")
-            _log(f"  Uploaded {len(df)} rows to BOOKS.")
+            
+            _log(f"  ✓ Uploaded {len(df)} rows to BOOKS")
         
-        _log("Creating embeddings (AI_EMBED); this may take several minutes...")
+        _log("")
+        _log("Creating embeddings with AI_EMBED (this may take several minutes)...")
         
         try:
             with conn.cursor() as cs:
@@ -298,15 +347,32 @@ def main():
                         AI_EMBED('{EMBEDDING_MODEL}', content) AS vector
                     FROM books
                 """)
-            _log("Done. All books loaded and embeddings created with improved chunking strategy.")
-            _log(f"Chunk settings used: size={CHUNK_SIZE}, overlap={CHUNK_OVERLAP}")
+            
+            _log("")
+            _log("=" * 80)
+            _log("✓ SUCCESS! All books loaded and embeddings created.")
+            _log("=" * 80)
+            _log("")
+            _log("Chunking approach used:")
+            _log(f"  • Structure-aware partitioning (titles, paragraphs, lists, tables)")
+            _log(f"  • Semantic chunking by title (preserves section boundaries)")
+            _log(f"  • Max chunk size: {CHUNK_MAX_CHARACTERS} characters")
+            _log(f"  • Overlap: {CHUNK_OVERLAP} characters")
+            _log("")
+            _log("Next steps:")
+            _log("  1. Test semantic search with improved queries from COMMON_QUERIES_IMPROVED.md")
+            _log("  2. Check section_title quality: SELECT DISTINCT section_title FROM book_embeddings;")
+            _log("  3. Compare results to previous chunking approach")
+            
         except snowflake_errors.ProgrammingError as e:
             err = str(e)
             if "AI_EMBED" in err or "Unknown function" in err or "CORTEX" in err.upper():
-                _log("  Skipped: Cortex AI embeddings not available. See docs/cortex-setup.md to enable.")
-                _log("Done. All books loaded into BOOKS table. Query BOOKS directly; book_embeddings was not created.")
+                _log("")
+                _log("✗ Cortex AI embeddings not available. See docs/cortex-setup.md to enable.")
+                _log("✓ Books loaded into BOOKS table (query directly; book_embeddings not created)")
             else:
                 raise
+                
     finally:
         conn.close()
 
