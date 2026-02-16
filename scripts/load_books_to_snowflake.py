@@ -38,7 +38,8 @@ except ImportError:
 PDF_FOLDER = os.path.join(_REPO_ROOT, "books_pdf_folder")
 CHUNK_SIZE = 1000
 MAX_SECTION_TITLE_LEN = 120
-EMBEDDING_MODEL = "text-embedding-3-large"
+# Snowflake Cortex embedding model (use AI_EMBED). See docs/cortex-setup.md to enable Cortex.
+EMBEDDING_MODEL = "snowflake-arctic-embed-m-v1.5"
 
 
 def get_snowflake_config():
@@ -200,7 +201,7 @@ def main():
                     )
                     _log(f"  Inserted rows {i + 1}-{i + len(batch)} of {len(df)}...")
             _log(f"  Uploaded {len(df)} rows to BOOKS.")
-        _log("Creating embeddings (AI_EMBED_TEXT); this may take several minutes...")
+        _log("Creating embeddings (AI_EMBED); this may take several minutes...")
         try:
             with conn.cursor() as cs:
                 cs.execute(f"""
@@ -212,13 +213,14 @@ def main():
                         author,
                         publication_year,
                         section_title,
-                        AI_EMBED_TEXT(content, '{EMBEDDING_MODEL}') AS vector
+                        AI_EMBED('{EMBEDDING_MODEL}', content) AS vector
                     FROM books
                 """)
             _log("Done. All books loaded and embeddings created.")
         except snowflake_errors.ProgrammingError as e:
-            if "AI_EMBED_TEXT" in str(e) or "Unknown function" in str(e):
-                _log("  Skipped: AI_EMBED_TEXT is not available on this account (Cortex AI may be disabled or in a different region).")
+            err = str(e)
+            if "AI_EMBED" in err or "Unknown function" in err or "CORTEX" in err.upper():
+                _log("  Skipped: Cortex AI embeddings not available. See docs/cortex-setup.md to enable.")
                 _log("Done. All books loaded into BOOKS table. Query BOOKS directly; book_embeddings was not created.")
             else:
                 raise

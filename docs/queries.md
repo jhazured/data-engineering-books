@@ -22,7 +22,7 @@ Find chunks most relevant to a concept:
 ```sql
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('exactly-once delivery semantics'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'exactly-once delivery semantics'), vector) DESC
 LIMIT 5;
 ```
 
@@ -35,7 +35,7 @@ Search within a specific book:
 SELECT section_title, content
 FROM book_embeddings
 WHERE book_id ILIKE '%kleppmann%' OR author ILIKE '%kleppmann%'
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('write-ahead logging'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'write-ahead logging'), vector) DESC
 LIMIT 5;
 ```
 
@@ -47,8 +47,8 @@ Find how different authors cover the same topic:
 ```sql
 SELECT book_id, author, section_title, content
 FROM book_embeddings
-WHERE VECTOR_SIMILARITY(AI_EMBED_TEXT('batch vs stream processing'), vector) > 0.7
-ORDER BY book_id, VECTOR_SIMILARITY(AI_EMBED_TEXT('batch vs stream processing'), vector) DESC;
+WHERE VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'batch vs stream processing'), vector) > 0.7
+ORDER BY book_id, VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'batch vs stream processing'), vector) DESC;
 ```
 
 ---
@@ -60,13 +60,13 @@ ORDER BY book_id, VECTOR_SIMILARITY(AI_EMBED_TEXT('batch vs stream processing'),
 -- Dimensional modeling (Kimball)
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('star schema fact and dimension tables'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'star schema fact and dimension tables'), vector) DESC
 LIMIT 5;
 
 -- Slowly changing dimensions
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('slowly changing dimension type 2 SCD'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'slowly changing dimension type 2 SCD'), vector) DESC
 LIMIT 5;
 ```
 
@@ -75,13 +75,13 @@ LIMIT 5;
 -- Event time vs processing time
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('event time processing time watermarks'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'event time processing time watermarks'), vector) DESC
 LIMIT 5;
 
 -- Exactly-once semantics
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('exactly-once delivery guarantees idempotent'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'exactly-once delivery guarantees idempotent'), vector) DESC
 LIMIT 5;
 ```
 
@@ -90,13 +90,13 @@ LIMIT 5;
 -- CAP theorem
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('CAP theorem consistency availability partition tolerance'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'CAP theorem consistency availability partition tolerance'), vector) DESC
 LIMIT 5;
 
 -- Replication strategies
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('leader follower replication consensus'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'leader follower replication consensus'), vector) DESC
 LIMIT 5;
 ```
 
@@ -105,13 +105,13 @@ LIMIT 5;
 -- ETL vs ELT
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('ETL ELT extract transform load'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'ETL ELT extract transform load'), vector) DESC
 LIMIT 5;
 
 -- Data quality
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('data quality validation testing'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'data quality validation testing'), vector) DESC
 LIMIT 5;
 ```
 
@@ -120,13 +120,13 @@ LIMIT 5;
 -- Partitioning and shuffles
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('spark shuffle partition skew'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'spark shuffle partition skew'), vector) DESC
 LIMIT 5;
 
 -- Catalyst optimizer
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('catalyst optimizer query plan'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'catalyst optimizer query plan'), vector) DESC
 LIMIT 5;
 ```
 
@@ -137,19 +137,19 @@ LIMIT 5;
 -- "Explain the Lambda architecture"
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('lambda architecture batch layer speed layer'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'lambda architecture batch layer speed layer'), vector) DESC
 LIMIT 5;
 
 -- "How do you handle late-arriving data?"
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('late arriving data watermark trigger'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'late arriving data watermark trigger'), vector) DESC
 LIMIT 5;
 
 -- "What is a data lakehouse?"
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('lakehouse delta lake iceberg'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'lakehouse delta lake iceberg'), vector) DESC
 LIMIT 5;
 ```
 
@@ -177,19 +177,19 @@ ORDER BY publication_year DESC;
 -- Consumer groups and offsets
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('kafka consumer group offset commit'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'kafka consumer group offset commit'), vector) DESC
 LIMIT 5;
 
 -- Event sourcing vs CDC
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('event sourcing change data capture CDC'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'event sourcing change data capture CDC'), vector) DESC
 LIMIT 5;
 
 -- Kafka partitioning strategies
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('kafka partition key ordering guarantees'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'kafka partition key ordering guarantees'), vector) DESC
 LIMIT 5;
 ```
 
@@ -200,19 +200,19 @@ LIMIT 5;
 -- Kimball vs Inmon (you'll mainly get Kimball, but useful to see what's covered)
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('enterprise data warehouse dimensional modeling conformed dimensions'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'enterprise data warehouse dimensional modeling conformed dimensions'), vector) DESC
 LIMIT 5;
 
 -- Fact table grain
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('fact table grain atomic transaction'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'fact table grain atomic transaction'), vector) DESC
 LIMIT 5;
 
 -- Surrogate keys
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('surrogate key natural key dimension'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'surrogate key natural key dimension'), vector) DESC
 LIMIT 5;
 ```
 
@@ -223,13 +223,13 @@ LIMIT 5;
 -- Data lake organization
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('data lake bronze silver gold medallion'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'data lake bronze silver gold medallion'), vector) DESC
 LIMIT 5;
 
 -- Object storage patterns
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('S3 object storage parquet partitioning'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'S3 object storage parquet partitioning'), vector) DESC
 LIMIT 5;
 ```
 
@@ -240,19 +240,19 @@ LIMIT 5;
 -- Query optimization
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('query optimization indexing predicate pushdown'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'query optimization indexing predicate pushdown'), vector) DESC
 LIMIT 5;
 
 -- Data skew
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('data skew hot partition salting'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'data skew hot partition salting'), vector) DESC
 LIMIT 5;
 
 -- Caching strategies
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('caching materialized view precompute'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'caching materialized view precompute'), vector) DESC
 LIMIT 5;
 ```
 
@@ -263,19 +263,19 @@ LIMIT 5;
 -- Idempotency
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('idempotent operation retry deduplication'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'idempotent operation retry deduplication'), vector) DESC
 LIMIT 5;
 
 -- Backfilling
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('backfill historical data reprocessing'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'backfill historical data reprocessing'), vector) DESC
 LIMIT 5;
 
 -- Schema evolution
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('schema evolution backward forward compatibility'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'schema evolution backward forward compatibility'), vector) DESC
 LIMIT 5;
 ```
 
@@ -286,25 +286,25 @@ LIMIT 5;
 -- "What's the difference between OLTP and OLAP?"
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('OLTP OLAP transactional analytical workload'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'OLTP OLAP transactional analytical workload'), vector) DESC
 LIMIT 5;
 
 -- "Explain normalization vs denormalization"
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('normalization denormalization third normal form'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'normalization denormalization third normal form'), vector) DESC
 LIMIT 5;
 
 -- "How do distributed transactions work?"
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('two-phase commit distributed transaction coordinator'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'two-phase commit distributed transaction coordinator'), vector) DESC
 LIMIT 5;
 
 -- "What is eventual consistency?"
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('eventual consistency strong consistency linearizable'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'eventual consistency strong consistency linearizable'), vector) DESC
 LIMIT 5;
 ```
 
@@ -317,19 +317,19 @@ Useful when you're stuck on something at work:
 -- Generic "why is my job slow"
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('performance bottleneck slow job optimization'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'performance bottleneck slow job optimization'), vector) DESC
 LIMIT 5;
 
 -- Spark memory issues
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('spark out of memory executor driver spill'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'spark out of memory executor driver spill'), vector) DESC
 LIMIT 5;
 
 -- Data pipeline failures
 SELECT book_id, section_title, content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('pipeline failure recovery checkpoint restart'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'pipeline failure recovery checkpoint restart'), vector) DESC
 LIMIT 5;
 ```
 

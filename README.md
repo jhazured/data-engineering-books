@@ -8,7 +8,7 @@
 
 ## Introduction
 
-**Load Books into Snowflake AI** is a small pipeline that ingests PDF books into Snowflake, chunks the text, and builds vector embeddings with Snowflake’s built-in AI. You can then run semantic search in SQL or use an optional Mistral-based agent (LangChain + Hugging Face) for Q&A, RAG over your book corpus, and SQL generation against Snowflake.
+**Load Books into Snowflake AI** is a small pipeline that ingests PDF books into Snowflake, chunks the text, and builds vector embeddings with Snowflake Cortex (`AI_EMBED`). You can then run semantic search in SQL or use an optional Mistral-based agent (LangChain + Hugging Face) for Q&A, RAG over your book corpus, and SQL generation against Snowflake.
 
 The project is aimed at data engineers and learners who want to combine **Snowflake** (tables, `AI_EMBED_TEXT`, vector search) with **Python** (PDF extraction, chunking, metadata) and **LLM/RAG** (Mistral agent). It demonstrates practical data engineering—ingestion, metadata, chunking—and modern analytics AI: embeddings, vector similarity, and retrieval-augmented generation. The repo also includes a short **book collection analysis** (strengths and gaps) for data engineering reading.
 
@@ -53,6 +53,7 @@ Then query in Snowflake (see [Query embeddings](#query-embeddings)) or use the [
 | `scripts/mistral_snowflake_agent.py` | Mistral LLM agent: Q&A, RAG from vector DB, SQL execution in Snowflake, Pandas/CSV agent. |
 | `scripts/snowflake_helper.py` | Snowflake helper used by the Mistral agent to run SQL (reads config from `.env` or env vars). |
 | `scripts/snowflake_startup.py` | One-time setup: creates Snowflake warehouse, database, and schema if they don't exist (uses `.env`). |
+| `scripts/snowflake_teardown.py` | Teardown: drops the project database and warehouse (prompts for confirmation unless `--force`). |
 | `.env.example` | Template for Snowflake and Hugging Face credentials; copy to `.env` and fill in. |
 | `requirements.txt` | Python dependencies (key versions pinned for reproducibility; see [Dependencies](#dependencies)). |
 | `scripts/verify_setup.py` | Verify Python packages and optional Snowflake connectivity. |
@@ -66,13 +67,13 @@ Then query in Snowflake (see [Query embeddings](#query-embeddings)) or use the [
 ```
 PDFs (books_pdf_folder/)
     → load_books_to_snowflake.py (extract text, chunk)
-    → Snowflake: books (chunks) → book_embeddings (AI_EMBED_TEXT vectors)
+    → Snowflake: books (chunks) → book_embeddings (AI_EMBED vectors)
     → Vector search (SQL) or Mistral agent (RAG, Q&A, SQL over Snowflake)
 ```
 
 - **PDFs** → Python script extracts text and PDF metadata (author, publication year), infers section/chapter titles from the first short line per page, splits into chunks (default 1000 chars).
-- **Snowflake** → `books` table stores chunks; `book_embeddings` adds vectors via Snowflake AI (`AI_EMBED_TEXT`, default model `text-embedding-3-large`; vector dimensionality is model-dependent—see Snowflake docs).
-- **Consumption** → Query embeddings with `VECTOR_SIMILARITY` in SQL, or use the Mistral agent for RAG, Q&A, and SQL generation.
+- **Snowflake** → `books` table stores chunks; `book_embeddings` adds vectors via Snowflake Cortex (`AI_EMBED`, default model `snowflake-arctic-embed-m-v1.5`; see [docs/cortex-setup.md](docs/cortex-setup.md)).
+- **Consumption** → Query embeddings with `VECTOR_COSINE_SIMILARITY` in SQL, or use the Mistral agent for RAG, Q&A, and SQL generation.
 
 ---
 
@@ -118,7 +119,7 @@ These are **optional**; the current set already covers core DE well. Add books i
 ## Requirements
 
 - **Python 3.8+**
-- **Snowflake account** with database/schema access, a warehouse, and **AI feature** enabled (`AI_EMBED_TEXT` for embeddings). Snowflake AI usage (e.g. embeddings) may incur additional cost; see [Snowflake pricing](https://www.snowflake.com/pricing/) and your warehouse size for compute. A small warehouse is usually sufficient for small/medium book sets.
+- **Snowflake account** with database/schema access, a warehouse, and **Cortex AI** enabled for embeddings (`AI_EMBED`). See [docs/cortex-setup.md](docs/cortex-setup.md) to enable. Snowflake Cortex usage may incur additional cost; see [Snowflake pricing](https://www.snowflake.com/pricing/) and your warehouse size for compute. A small warehouse is usually sufficient for small/medium book sets.
 - **Hugging Face account** and API token (for the Mistral agent only).
 
 ---
@@ -162,6 +163,8 @@ python scripts/snowflake_startup.py
 ```
 
 This creates the warehouse (X-SMALL, auto-suspend 60s), database, and schema if they don't exist. If you already use an existing warehouse/database/schema, skip this step.
+
+To remove the project objects from Snowflake later, run `python scripts/snowflake_teardown.py` (use `--force` to skip the confirmation prompt).
 
 ### 2. Snowflake credentials
 
@@ -234,7 +237,7 @@ The script will:
 1. Read all PDFs from `books_pdf_folder/`
 2. Extract text and split into chunks
 3. Create or replace the `books` table and load chunks
-4. Create or replace the `book_embeddings` table with Snowflake `AI_EMBED_TEXT` vectors
+4. Create or replace the `book_embeddings` table with Snowflake Cortex `AI_EMBED` vectors
 
 If no PDFs are found, it prints a message and exits without connecting to Snowflake.
 
@@ -253,8 +256,8 @@ In Snowflake (worksheet or CLI), run semantic search over the embedded chunks:
 ```sql
 SELECT content
 FROM book_embeddings
-ORDER BY VECTOR_SIMILARITY(
-    AI_EMBED_TEXT('Explain ETL concepts'), vector
+ORDER BY VECTOR_COSINE_SIMILARITY(
+    AI_EMBED('snowflake-arctic-embed-m-v1.5', 'Explain ETL concepts'), vector
 ) DESC
 LIMIT 3;
 ```
@@ -267,7 +270,7 @@ Filter or display by metadata (author, publication_year, section_title):
 SELECT author, publication_year, section_title, content
 FROM book_embeddings
 WHERE author ILIKE '%Kleppmann%'
-ORDER BY VECTOR_SIMILARITY(AI_EMBED_TEXT('Explain ETL concepts'), vector) DESC
+ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('snowflake-arctic-embed-m-v1.5', 'Explain ETL concepts'), vector) DESC
 LIMIT 5;
 ```
 
@@ -333,7 +336,7 @@ Performance depends on warehouse size, PDF count, and chunk size. Run the loader
 | **PDF extraction fails or returns empty text** | Ensure PDFs are text-based, not scanned images. Use OCR for image-only PDFs. |
 | **Snowflake connection timeout** | Verify warehouse is running (not suspended), credentials in `.env` or script are correct, and network allows outbound to Snowflake. |
 | **Embeddings creation slow** | Check warehouse size; consider scaling up. Reduce `CHUNK_SIZE` or number of PDFs per run to test. |
-| **`AI_EMBED_TEXT` not found** | Enable Snowflake AI features on your account; confirm model name (e.g. `text-embedding-3-large`) is available in your region. |
+| **`AI_EMBED` / embeddings skipped** | Enable Snowflake Cortex AI: grant `SNOWFLAKE.CORTEX_EMBED_USER` (or `CORTEX_USER`) to your role. See [docs/cortex-setup.md](docs/cortex-setup.md). |
 | **Mistral agent import error** | Install optional packages: `pip install langchain langchain-community langchain-experimental`. Set `HUGGINGFACEHUB_API_TOKEN` and `repo_id` in the agent script. |
 | **Corrupted or password-protected PDFs** | Remove or fix PDFs; the loader skips or fails on unreadable files. |
 
@@ -368,7 +371,7 @@ This project is set up for **local development**. To productionize or harden:
 
 ## What this demonstrates
 
-- **Snowflake:** Tables, AI features (`AI_EMBED_TEXT`), vector search, SQL.
+- **Snowflake:** Tables, Cortex AI (`AI_EMBED`), vector search, SQL.
 - **Python data engineering:** PDF processing, chunking, Snowflake connector.
 - **Modern AI/ML:** Embeddings, RAG, vector search, LLM integration (Mistral).
 - **Documentation:** Setup, architecture, troubleshooting, expected results.
