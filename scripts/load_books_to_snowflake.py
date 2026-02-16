@@ -22,6 +22,8 @@ Optional for better quality (recommended):
 
 import os
 import sys
+import contextlib
+import io
 import snowflake.connector
 from snowflake.connector.pandas_tools import write_pandas
 import snowflake.connector.errors as snowflake_errors
@@ -126,22 +128,27 @@ def partition_and_chunk_pdf(pdf_path):
     # Partition the PDF - this detects titles, paragraphs, lists, tables, etc.
     # strategy="auto" will use the best available method
     # For production, consider "hi_res" with local-inference installed
+    # Suppress PDF library stderr (e.g. "Cannot set non-stroke color") during partition
+    def _run_partition(**kwargs):
+        with open(os.devnull, "w") as devnull:
+            with contextlib.redirect_stderr(devnull):
+                return partition_pdf(filename=pdf_path, **kwargs)
+
     try:
-        elements = partition_pdf(
-            filename=pdf_path,
-            strategy="auto",  # Use "hi_res" if you have local-inference installed
-            infer_table_structure=True,  # Detect tables properly
+        elements = _run_partition(
+            strategy="auto",
+            infer_table_structure=True,
             include_page_breaks=False,
         )
         _log(f"    Detected {len(elements)} document elements")
     except Exception as e:
-        _log(f"    Error during partitioning: {e}")
-        _log(f"    Falling back to fast strategy...")
-        elements = partition_pdf(
-            filename=pdf_path,
-            strategy="fast",
-            include_page_breaks=False,
-        )
+        err_msg = str(e).lower()
+        if "tesseract" in err_msg or "hi_res" in err_msg:
+            _log(f"    Note: hi_res unavailable (tesseract not installed). Using fast strategy.")
+        else:
+            _log(f"    Partitioning issue: {e}")
+            _log(f"    Falling back to fast strategy...")
+        elements = _run_partition(strategy="fast", include_page_breaks=False)
         _log(f"    Detected {len(elements)} document elements (fast mode)")
     
     # Chunk by title - this preserves section boundaries

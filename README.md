@@ -140,13 +140,16 @@ Use **requirements.txt** for a reproducible install (recommended):
 pip install -r requirements.txt
 ```
 
-**Dependencies:** Key packages are pinned in `requirements.txt` for reproducibility: `snowflake-connector-python`, `pdfplumber`, `pandas`, and the LangChain set (`langchain`, `langchain-community`, `langchain-experimental`). See the file for exact version ranges.
+**Dependencies:** Key packages are in `requirements.txt`: `unstructured[pdf]`, `pypdf`, `snowflake-connector-python`, `pandas`, and optionally the LangChain set for the Mistral agent. See the file for versions.
 
-Use **manual install** only if you need to install a subset (e.g. loader only, without LangChain):
+**Optional – Install Tesseract (for better PDF chunking):**  
+The loader uses Unstructured.io. Without Tesseract it falls back to a "fast" strategy; with Tesseract you get structure-aware "hi_res" partitioning. Install once, then use the same Python env:
 
-```bash
-pip install pdfplumber snowflake-connector-python pandas langchain langchain-community langchain-experimental
-```
+- **macOS:** `brew install tesseract poppler`
+- **Ubuntu/Debian:** `sudo apt-get install -y tesseract-ocr poppler-utils`
+- **Windows:** See [scripts/unstructured-setup.md](scripts/unstructured-setup.md)
+
+Then optionally: `pip install "unstructured[local-inference]"`
 
 **Verify installation:**
 
@@ -154,7 +157,7 @@ pip install pdfplumber snowflake-connector-python pandas langchain langchain-com
 python scripts/verify_setup.py
 ```
 
-This checks that required packages are installed, `.env` exists, and optionally tests the Snowflake connection.
+This checks that required packages are installed, `.env` exists, optional Tesseract for PDF quality, and optionally the Snowflake connection.
 
 **Create Snowflake objects (optional, first-time or new account):**
 

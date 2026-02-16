@@ -56,6 +56,17 @@ def check_packages():
     return all_ok
 
 
+def check_tesseract():
+    """Optional: tesseract enables hi_res PDF partitioning (better chunk quality)."""
+    import shutil
+    if shutil.which("tesseract"):
+        print("  OK  tesseract (optional, for hi_res PDF chunking)")
+    else:
+        print("  -   tesseract not installed (optional; install for better PDF structure detection)")
+        print("      See scripts/unstructured-setup.md — macOS: brew install tesseract poppler")
+    return True
+
+
 def check_env():
     """Check .env exists and has placeholders replaced (basic check)."""
     env_path = os.path.join(REPO_ROOT, ".env")
@@ -106,6 +117,8 @@ def main():
     print("-" * 40)
     print("Packages:")
     pkgs_ok = check_packages()
+    print("\nOptional (Tesseract for PDF quality):")
+    check_tesseract()
     print("\nConfiguration:")
     check_env()
     print("\nOptional (Hugging Face):")
