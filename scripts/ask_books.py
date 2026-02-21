@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
 Ask a question and get a single, considered answer based on your book embeddings in Snowflake
-(ChatGPT/Claude-style). Uses semantic search over book_embeddings and the Mistral RAG chain.
+(ChatGPT/Claude-style). Uses semantic search over book_embeddings and Snowflake Cortex COMPLETE() for RAG.
 
 Usage:
   python scripts/ask_books.py "How does exactly-once delivery work in streaming?"
   python scripts/ask_books.py "What is the star schema?"
 
-Requires: SNOWFLAKE_* and HUGGINGFACEHUB_API_TOKEN (and optionally MISTRAL_REPO_ID) in .env or env.
+Requires: SNOWFLAKE_* in .env (and optionally CORTEX_MODEL). CORTEX_USER role in Snowflake.
 """
 
 from __future__ import annotations
@@ -56,7 +56,7 @@ def main() -> int:
         print("No relevant chunks found in book_embeddings. Check that you've run load_books_to_snowflake.py.", file=sys.stderr)
         return 1
 
-    answer = personal_mistral(question, retriever, docs=docs)
+    answer = personal_mistral(question, retriever, docs=docs, config=config)
     print(answer)
 
     # Optional: print sources (book + section)

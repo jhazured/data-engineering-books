@@ -1,11 +1,8 @@
 # Agent + Snowflake only (no PDF load). Use when you run only:
-#   scripts/mistral_snowflake_agent.py, scripts/snowflake_helper.py
+#   scripts/ask_books.py, mistral_snowflake_agent.py (Cortex COMPLETE), snowflake_retriever.py, snowflake_helper.py
 # Much smaller venv (~100–200 MB vs ~8 GB with unstructured[pdf]).
-# HuggingFaceEndpoint uses the API; no local torch/transformers.
 
 snowflake-connector-python>=3.18
-langchain>=0.3
-langchain-community>=0.3
-langchain-experimental>=0.3
+langchain-core>=0.3
 pandas>=2.0
 python-dotenv>=1.2

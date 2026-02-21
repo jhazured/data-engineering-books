@@ -32,8 +32,7 @@ def check_packages():
         ("pandas", "pandas"),
     ]
     optional = [
-        ("langchain_community.llms", "langchain-community"),
-        ("langchain_experimental.agents", "langchain-experimental"),
+        ("langchain_core.documents", "langchain-core"),
     ]
     all_ok = True
     for mod, pkg in required:
@@ -50,9 +49,9 @@ def check_packages():
     for mod, pkg in optional:
         try:
             __import__(mod)
-            print(f"  OK  {pkg} (optional)")
+            print(f"  OK  {pkg} (optional, for retriever)")
         except ImportError:
-            print(f"  -   {pkg} (optional, for Mistral agent)")
+            print(f"  -   {pkg} (optional, for ask_books retriever)")
     return all_ok
 
 
@@ -82,28 +81,35 @@ def check_env():
     return True
 
 
-def check_huggingface():
-    """Check Hugging Face token (needed for Mistral agent)."""
-    token = os.environ.get("HUGGINGFACEHUB_API_TOKEN", "")
-    if token and not token.startswith("hf_"):
-        print("  WARN HUGGINGFACEHUB_API_TOKEN set but doesn't look like a valid token (expect hf_...)")
-    elif token:
-        print("  OK  HUGGINGFACEHUB_API_TOKEN set")
+def check_cortex_model():
+    """Check Cortex COMPLETE model (agent uses SNOWFLAKE.CORTEX.COMPLETE)."""
+    model = os.environ.get("CORTEX_MODEL", "").strip()
+    if not model:
+        print("  OK  CORTEX_MODEL not set (agent will use default: mistral-large2)")
     else:
-        print("  -   HUGGINGFACEHUB_API_TOKEN not set (needed for Mistral agent)")
+        print(f"  OK  CORTEX_MODEL={model}")
     return True
 
 
-def check_mistral_repo():
-    """Check Mistral model repo (optional; agent uses default if unset)."""
-    repo = os.environ.get("MISTRAL_REPO_ID", "")
-    if not repo:
-        print("  -   MISTRAL_REPO_ID not set (agent will use default repo)")
-    elif repo == "YOUR_MISTRAL_MODEL_REPO" or "YOUR_" in repo:
-        print("  WARN MISTRAL_REPO_ID is still placeholder; set to your model repo for the Mistral agent")
-    else:
-        print("  OK  MISTRAL_REPO_ID set")
-    return True
+def check_cortex_complete():
+    """Optional: try Cortex COMPLETE() if Snowflake is configured (smoke test)."""
+    try:
+        import snowflake_helper
+        cfg = snowflake_helper._get_config()
+        if cfg.get("account") in (None, "", "YOUR_ACCOUNT") or not cfg.get("warehouse"):
+            print("  -   Cortex COMPLETE: not configured (set SNOWFLAKE_* and SNOWFLAKE_WAREHOUSE to verify)")
+            return True
+        model = os.environ.get("CORTEX_MODEL", "mistral-large2")
+        sql = "SELECT SNOWFLAKE.CORTEX.COMPLETE(%s, %s)"
+        rows = snowflake_helper.snowflake_run_new(sql, params=(model, "Reply with exactly: OK"))
+        if rows and len(rows) > 0 and rows[0][0]:
+            print("  OK  Cortex COMPLETE() smoke test passed")
+        else:
+            print("  WARN Cortex COMPLETE() returned empty (check CORTEX_USER and warehouse)")
+        return True
+    except Exception as e:
+        print(f"  WARN Cortex COMPLETE(): {e}")
+        return True
 
 
 def check_snowflake_connection():
@@ -133,11 +139,12 @@ def main():
     check_tesseract()
     print("\nConfiguration:")
     check_env()
-    print("\nOptional (Hugging Face / Mistral):")
-    check_huggingface()
-    check_mistral_repo()
+    print("\nOptional (Cortex COMPLETE agent):")
+    check_cortex_model()
     print("\nOptional (Snowflake):")
     check_snowflake_connection()
+    print("\nOptional (Cortex COMPLETE smoke test):")
+    check_cortex_complete()
     print("-" * 40)
     if not pkgs_ok:
         print("Fix missing packages, then run again.")

@@ -4,13 +4,13 @@
 [![Last commit](https://img.shields.io/github/last-commit/jhazured/data-engineering-books?color=blue)](https://github.com/jhazured/data-engineering-books)
 [![Snowflake](https://img.shields.io/badge/Snowflake-Compatible-blue.svg)](https://www.snowflake.com/)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
-[![Mistral LLM](https://img.shields.io/badge/Mistral-7B_Instruct-green.svg)](https://huggingface.co/mistralai)
+[![Snowflake Cortex](https://img.shields.io/badge/Cortex-COMPLETE_%2B_AI_EMBED-green.svg)](https://docs.snowflake.com/en/user-guide/snowflake-cortex/llm-functions)
 
 ## Introduction
 
-**Load Books into Snowflake AI** is a small pipeline that ingests PDF books into Snowflake, chunks the text, and builds vector embeddings with Snowflake Cortex (`AI_EMBED`). You can then run semantic search in SQL or use an optional Mistral-based agent (LangChain + Hugging Face) for Q&A, RAG over your book corpus, and SQL generation against Snowflake.
+**Load Books into Snowflake AI** is a small pipeline that ingests PDF books into Snowflake, chunks the text, and builds vector embeddings with Snowflake Cortex (`AI_EMBED`). You can then run semantic search in SQL or use Snowflake Cortex `COMPLETE()` for Q&A and RAG over your book corpus.
 
-The project is aimed at data engineers and learners who want to combine **Snowflake** (tables, `AI_EMBED_TEXT`, vector search) with **Python** (PDF extraction, chunking, metadata) and **LLM/RAG** (Mistral agent). It demonstrates practical data engineering—ingestion, metadata, chunking—and modern analytics AI: embeddings, vector similarity, and retrieval-augmented generation. The repo also includes a short **book collection analysis** (strengths and gaps) for data engineering reading.
+The project is aimed at data engineers and learners who want to combine **Snowflake** (tables, Cortex `AI_EMBED` and `COMPLETE`, vector search) with **Python** (PDF extraction, chunking, metadata) and **RAG** (Cortex COMPLETE over book_embeddings). It demonstrates practical data engineering—ingestion, metadata, chunking—and modern analytics AI: embeddings, vector similarity, and retrieval-augmented generation. The repo also includes a short **book collection analysis** (strengths and gaps) for data engineering reading.
 
 Use it to run semantic search over your own PDFs in Snowflake, to experiment with RAG and vector search, or as a portfolio piece showing Snowflake AI, Python pipelines, and documentation.
 
@@ -40,7 +40,7 @@ python scripts/load_books_to_snowflake.py
 python scripts/verify_setup.py
 ```
 
-Then query in Snowflake (see [Query embeddings](#query-embeddings)) or use the [Mistral agent](#mistral-agent) from Python. Run tests with `pytest tests/` or `make test`. Optional: `make load`, `make verify`, `make dry-run`, `make workbook` (see Makefile).
+Then query in Snowflake (see [Query embeddings](#query-embeddings)) or use the [Cortex Q&A agent](#chat-style-qa-ask-and-get-one-answer) from Python. Run tests with `pytest tests/` or `make test`. Optional: `make load`, `make verify`, `make dry-run`, `make workbook` (see Makefile).
 
 ---
 
@@ -50,10 +50,10 @@ Then query in Snowflake (see [Query embeddings](#query-embeddings)) or use the [
 |------|-------------|
 | `books_pdf_folder/` | PDF books to ingest (place your `.pdf` files here). |
 | `scripts/load_books_to_snowflake.py` | Extract text from PDFs, chunk, upload to Snowflake; adds metadata (author, publication_year, section_title) from PDF metadata and per-page headings. Creates `books` and `book_embeddings` tables. |
-| `scripts/ask_books.py` | **Chat-style Q&A:** ask a question, get one synthesized answer from your book embeddings (uses Snowflake retriever + Mistral RAG). |
-| `scripts/mistral_snowflake_agent.py` | Mistral LLM agent: Q&A, RAG from vector DB, SQL execution in Snowflake, Pandas/CSV agent. |
+| `scripts/ask_books.py` | **Chat-style Q&A:** ask a question, get one synthesized answer from your book embeddings (Snowflake retriever + Cortex COMPLETE RAG). |
+| `scripts/mistral_snowflake_agent.py` | Snowflake Cortex COMPLETE(): ask_mistral (Q&A), personal_mistral (RAG over book_embeddings). |
 | `scripts/snowflake_retriever.py` | Snowflake-backed retriever for `book_embeddings`; used by `ask_books.py` and `personal_mistral`. |
-| `scripts/snowflake_helper.py` | Snowflake helper used by the Mistral agent to run SQL (reads config from `.env` or env vars). |
+| `scripts/snowflake_helper.py` | Snowflake helper used by the retriever and Cortex agent (reads config from `.env` or env vars). |
 | `scripts/snowflake_startup.py` | One-time setup: creates Snowflake warehouse, database, and schema if they don't exist (uses `.env`). |
 | `scripts/snowflake_teardown.py` | Teardown: drops the project database and warehouse (prompts for confirmation unless `--force`). |
 | `docs/queries.md` | Semantic search query examples (markdown). |
@@ -77,7 +77,7 @@ python scripts/ask_books.py "How does exactly-once delivery work in streaming?"
 python scripts/ask_books.py "What is the star schema?"
 ```
 
-This runs semantic search over `book_embeddings` in Snowflake, retrieves relevant chunks, and the Mistral RAG chain returns one answer plus optional source (book, section). Requires Snowflake and Hugging Face env vars (see [Setup](#setup-first-time)).
+This runs semantic search over `book_embeddings` in Snowflake, retrieves relevant chunks, and Snowflake Cortex `COMPLETE()` returns one answer plus optional source (book, section). Requires Snowflake env vars and CORTEX_USER (see [Setup](#setup-first-time)).
 
 ---
 
@@ -89,12 +89,12 @@ This runs semantic search over `book_embeddings` in Snowflake, retrieves relevan
 PDFs (books_pdf_folder/)
     → load_books_to_snowflake.py (extract text, chunk)
     → Snowflake: books (chunks) → book_embeddings (AI_EMBED vectors)
-    → Vector search (SQL) or Mistral agent (RAG, Q&A, SQL over Snowflake)
+    → Vector search (SQL) or Cortex COMPLETE (RAG, Q&A over Snowflake)
 ```
 
 - **PDFs** → Python script extracts text and PDF metadata (author, publication year), infers section/chapter titles from the first short line per page, splits into chunks (default 1000 chars).
 - **Snowflake** → `books` table stores chunks; `book_embeddings` adds vectors via Snowflake Cortex (`AI_EMBED`, default model `snowflake-arctic-embed-m-v1.5`; see [docs/cortex-setup.md](docs/cortex-setup.md)).
-- **Consumption** → Query embeddings with `VECTOR_COSINE_SIMILARITY` in SQL, or use the Mistral agent for RAG, Q&A, and SQL generation.
+- **Consumption** → Query embeddings with `VECTOR_COSINE_SIMILARITY` in SQL, or use Cortex COMPLETE for RAG and Q&A.
 
 ---
 
@@ -141,13 +141,13 @@ These are **optional**; the current set already covers core DE well. Add books i
 
 - **Python 3.8+**
 - **Snowflake account** with database/schema access, a warehouse, and **Cortex AI** enabled for embeddings (`AI_EMBED`). See [docs/cortex-setup.md](docs/cortex-setup.md) to enable. Snowflake Cortex usage may incur additional cost; see [Snowflake pricing](https://www.snowflake.com/pricing/) and your warehouse size for compute. A small warehouse is usually sufficient for small/medium book sets.
-- **Hugging Face account** and API token (for the Mistral agent only).
+- **Snowflake Cortex** CORTEX_USER (or CORTEX_EMBED_USER for embeddings only; CORTEX_USER needed for ask_books / COMPLETE).
 
 ---
 
 ## Setup (first-time)
 
-Do this once before loading books or using the Mistral agent.
+Do this once before loading books or using ask_books (Cortex COMPLETE).
 
 **⚠️ Never commit credentials.** This project uses `.env` for local development only. Do not commit `.env` or put real credentials in code.
 
@@ -159,7 +159,7 @@ Use **requirements.txt** for a reproducible install (recommended):
 pip install -r requirements.txt
 ```
 
-**Dependencies:** Key packages are in `requirements.txt`: `unstructured[pdf]`, `pypdf`, `snowflake-connector-python`, `pandas`, and optionally the LangChain set for the Mistral agent. See the file for versions.
+**Dependencies:** Key packages are in `requirements.txt`: `unstructured[pdf]`, `pypdf`, `snowflake-connector-python`, `langchain-core`, `pandas`. Agent uses Snowflake Cortex COMPLETE (no external LLM API). See the file for versions.
 
 **Optional – Install Tesseract (for better PDF chunking):**  
 The loader uses Unstructured.io. Without Tesseract it falls back to a "fast" strategy; with Tesseract you get structure-aware "hi_res" partitioning. Install once, then use the same Python env:
@@ -204,21 +204,11 @@ Set in `.env`:
 - `SNOWFLAKE_USER`, `SNOWFLAKE_PASSWORD`, `SNOWFLAKE_ACCOUNT`
 - `SNOWFLAKE_WAREHOUSE`, `SNOWFLAKE_DATABASE`, `SNOWFLAKE_SCHEMA`
 
-Both the **loader** and the **Mistral agent** read Snowflake config from the same env vars (loader uses `snowflake_helper`). Load the env before running (e.g. `source .env` or use `python-dotenv`).
+Both the **loader** and the **Cortex agent** (ask_books) read Snowflake config from the same env vars. Load the env before running (e.g. `source .env` or use `python-dotenv`).
 
-### 3. Hugging Face (Mistral agent only)
+### 3. Cortex COMPLETE (ask_books / Q&A)
 
-Set your token (e.g. in `.env` or in the shell):
-
-```bash
-export HUGGINGFACEHUB_API_TOKEN="hf_your_token_here"
-```
-
-In `scripts/mistral_snowflake_agent.py`, set your model repo:
-
-```python
-repo_id = "YOUR_MISTRAL_MODEL_REPO"  # e.g. mistralai/Mistral-7B-Instruct-v0.2
-```
+Your Snowflake role needs **CORTEX_USER** (for `COMPLETE()`). See [docs/cortex-setup.md](docs/cortex-setup.md). Optional: set `CORTEX_MODEL` in `.env` (default: `mistral-large2`; alternatives: `mixtral-8x7b`, `mistral-7b`, `snowflake-arctic`).
 
 ### 4. PDFs
 
@@ -284,19 +274,21 @@ LIMIT 5;
 
 For more query examples, see [docs/queries.md](docs/queries.md).
 
-### Mistral agent
+### Cortex Q&A (ask_books or Python)
 
-From the repo root (so that `scripts` is on `PYTHONPATH`), or from `scripts/`:
+From the repo root:
+
+```bash
+python scripts/ask_books.py "How does exactly-once delivery work in streaming?"
+```
+
+Or from Python (same Snowflake config as above):
 
 ```python
-from scripts.mistral_snowflake_agent import (
-    ask_mistral,
-    personal_mistral,
-    personal_mistral_snowflake,
-    mistral_csv,
-)
+from scripts.mistral_snowflake_agent import ask_mistral, personal_mistral
+from scripts.snowflake_retriever import get_retriever
 
-# Simple Q&A (no context)
+# Simple Q&A (no context; uses Cortex COMPLETE)
 answer = ask_mistral("What is ETL?")
 print(answer)
 ```
@@ -312,22 +304,14 @@ ETL stands for Extract, Transform, Load. It's a process used in data warehousing
 ETL pipelines are often scheduled (batch) or event-driven and are foundational for analytics and ML.
 ```
 
-```python
-# RAG: answer using your book chunks from a vector DB
-answer_context = personal_mistral(
-    "How do I orchestrate data pipelines with Airflow?", vector_db
-)
-
-# Generate SQL from context and run in Snowflake
-sql_results = personal_mistral_snowflake("Get total users per region", vector_db)
-
-# Query a pandas DataFrame
-csv_result = mistral_csv(my_df, "What is the average value of column X?")
+# RAG: answer using your book chunks (Cortex COMPLETE over retriever)
+retriever = get_retriever()  # uses SNOWFLAKE_* from env
+docs = retriever.similarity_search("How do I orchestrate data pipelines with Airflow?", k=5)
+answer = personal_mistral("How do I orchestrate data pipelines with Airflow?", retriever, docs=docs)
+print(answer)
 ```
 
-The agent uses `scripts/snowflake_helper.py` to run SQL in Snowflake; configure Snowflake via `.env` or environment variables (see [Setup](#setup-first-time)).
-
-The RAG chain uses LangChain LCEL (prompt | llm | StrOutputParser).
+The agent uses `scripts/snowflake_helper.py` to run SQL in Snowflake (including `COMPLETE()`). Configure Snowflake via `.env` (see [Setup](#setup-first-time)).
 
 ---
 
@@ -345,7 +329,7 @@ Performance depends on warehouse size, PDF count, and chunk settings. As a refer
 | **Snowflake connection timeout** | Verify warehouse is running (not suspended), credentials in `.env` or script are correct, and network allows outbound to Snowflake. |
 | **Embeddings creation slow** | Check warehouse size; consider scaling up. Reduce `CHUNK_MAX_CHARS` or number of PDFs per run to test. |
 | **`AI_EMBED` / embeddings skipped** | Enable Snowflake Cortex AI: grant `SNOWFLAKE.CORTEX_EMBED_USER` (or `CORTEX_USER`) to your role. See [docs/cortex-setup.md](docs/cortex-setup.md). |
-| **Mistral agent import error** | Install optional packages: `pip install langchain langchain-community langchain-experimental`. Set `HUGGINGFACEHUB_API_TOKEN` and `repo_id` in the agent script. |
+| **ask_books / COMPLETE fails** | Grant `SNOWFLAKE.CORTEX_USER` to your role. Set `SNOWFLAKE_WAREHOUSE` (COMPLETE needs a running warehouse). Optional: `pip install langchain-core` for retriever. |
 | **Corrupted or password-protected PDFs** | Remove or fix PDFs; the loader skips or fails on unreadable files. |
 
 ---
@@ -381,7 +365,7 @@ This project is set up for **local development**. To productionize or harden:
 
 - **Snowflake:** Tables, Cortex AI (`AI_EMBED`), vector search, SQL.
 - **Python data engineering:** PDF processing, chunking, Snowflake connector.
-- **Modern AI/ML:** Embeddings, RAG, vector search, LLM integration (Mistral).
+- **Modern AI/ML:** Embeddings, RAG, vector search, Snowflake Cortex COMPLETE.
 - **Documentation:** Setup, architecture, troubleshooting, expected results.
 
 **Possible extensions:** CI/CD with GitHub Actions (test Snowflake connection, data quality); data quality checks (duplicate detection, chunk size validation); production deployment (Airflow, containers).
@@ -392,4 +376,4 @@ This project is set up for **local development**. To productionize or harden:
 
 - Detect and run OCR on image-only PDFs.
 - Chapter/section titles and author/publication_year are now included (see [Load books](#load-books-and-create-embeddings)).
-- Extend the Mistral agent (e.g. more tools, different models).
+- Extend the Cortex agent (e.g. different CORTEX_MODEL, streaming).

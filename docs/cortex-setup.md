@@ -1,6 +1,6 @@
-# Enabling Snowflake Cortex AI for embeddings
+# Enabling Snowflake Cortex AI for embeddings and COMPLETE
 
-The book loader uses **Snowflake Cortex** to create vector embeddings via `AI_EMBED`. If you see "Unknown function" or embeddings are skipped, enable Cortex as below.
+The book loader uses **Snowflake Cortex** to create vector embeddings via `AI_EMBED`. The Q&A agent (`ask_books.py`) uses **COMPLETE()** for RAG. If you see "Unknown function" or embeddings are skipped, enable Cortex as below. For `ask_books` you need **CORTEX_USER** (not just CORTEX_EMBED_USER) and a **running warehouse** (COMPLETE runs on the warehouse).
 
 ## 1. Grant Cortex privileges
 

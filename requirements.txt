@@ -1,9 +1,10 @@
-# Data engineering books project: load PDFs to Snowflake + Mistral/Snowflake agent.
+# Data engineering books project: load PDFs to Snowflake + Cortex COMPLETE() agent.
 # Install: python -m venv .venv && .venv/bin/pip install -r requirements.txt
 #
 # Used by:
 #   scripts/load_books_to_snowflake.py  -> unstructured[pdf], snowflake
-#   scripts/mistral_snowflake_agent.py   -> langchain, langchain-community, langchain-experimental, pandas
+#   scripts/mistral_snowflake_agent.py   -> Snowflake Cortex COMPLETE() via snowflake_helper (no external LLM)
+#   scripts/snowflake_retriever.py       -> langchain_core (Document)
 #   scripts/snowflake_helper.py          -> snowflake
 #
 # unstructured[pdf] pulls in unstructured-inference (and torch) for PDF layout;
@@ -11,9 +12,7 @@
 # For agent-only (no load_books): use requirements-agent-only.txt for a small venv.
 
 snowflake-connector-python>=3.18
-langchain>=0.3
-langchain-community>=0.3
-langchain-experimental>=0.3
+langchain-core>=0.3
 pandas>=2.0
 python-dotenv>=1.2
 pypdf>=4.0

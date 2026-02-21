@@ -15,7 +15,7 @@ Pipeline to ingest PDF books into Snowflake, chunk with Unstructured.io, build v
 |------|--------|-----|
 | Load PDFs → Snowflake | ✅ | `scripts/load_books_to_snowflake.py` (Unstructured `by_title` chunking → `book_chunks_staging` → `book_embeddings` with `AI_EMBED`) |
 | Semantic search (SQL) | ✅ | Query `book_embeddings` with `VECTOR_COSINE_SIMILARITY` + `AI_EMBED`; examples in `docs/queries.md` and `docs/workbook.ipynb` |
-| Chat-style answer from books | ✅ | `scripts/ask_books.py` → Snowflake retriever (`scripts/snowflake_retriever.py`) → `personal_mistral()` in `scripts/mistral_snowflake_agent.py` |
+| Chat-style answer from books | ✅ | `scripts/ask_books.py` → Snowflake retriever → `personal_mistral()` using Snowflake Cortex COMPLETE() in `scripts/mistral_snowflake_agent.py` |
 | Section/chapter labels | ✅ Improved | Load script uses Unstructured `Title` when present, plus first-line fallback for headings (e.g. "Chapter 5", short title-case lines) |
 
 ---
@@ -24,7 +24,7 @@ Pipeline to ingest PDF books into Snowflake, chunk with Unstructured.io, build v
 
 ```
 data-engineering-books/
-├── .env.example              # Env template (Snowflake, Hugging Face); copy to .env
+├── .env.example              # Env template (Snowflake, CORTEX_MODEL); copy to .env
 ├── .gitignore
 ├── README.md                 # Main docs, quick start, project structure, setup
 ├── requirements.txt         # Full deps (unstructured[pdf], langchain, snowflake, etc.)
@@ -47,7 +47,7 @@ data-engineering-books/
 └── scripts/
     ├── ask_books.py          # CLI: ask a question → one answer from book embeddings (RAG)
     ├── load_books_to_snowflake.py  # Ingest PDFs → chunk → Snowflake book_chunks_staging + book_embeddings
-    ├── mistral_snowflake_agent.py   # Mistral LLM: personal_mistral (RAG), personal_mistral_snowflake (SQL), mistral_csv
+    ├── mistral_snowflake_agent.py   # Cortex COMPLETE(): ask_mistral, personal_mistral (RAG)
     ├── queries_to_workbook.py      # Generate docs/workbook.ipynb from docs/queries.md
     ├── schema.sql            # CREATE TABLE book_chunks_staging, book_embeddings (run once in Snowflake)
     ├── snowflake_helper.py   # Run SQL in Snowflake (config from env)
@@ -66,7 +66,7 @@ data-engineering-books/
 | **ask_books.py** | Entry point for "ask and get one answer"; uses snowflake_retriever + personal_mistral. |
 | **load_books_to_snowflake.py** | Partition PDFs (Unstructured), chunk by_title, insert staging → book_embeddings with AI_EMBED. |
 | **snowflake_retriever.py** | Implements similarity_search over book_embeddings so RAG can use Snowflake as the vector store. |
-| **mistral_snowflake_agent.py** | personal_mistral (RAG), personal_mistral_snowflake (SQL gen + run), mistral_csv (pandas agent). |
+| **mistral_snowflake_agent.py** | Snowflake Cortex COMPLETE(): ask_mistral (Q&A), personal_mistral (RAG over book_embeddings). |
 | **snowflake_helper.py** | Generic Snowflake run-SQL helper; used by retriever and agent. |
 | **schema.sql** | Defines book_chunks_staging and book_embeddings; run once in BOOKS_DB.BOOKS. |
 | **snowflake_startup.py** | Create warehouse/db/schema if missing. |
@@ -87,7 +87,7 @@ data-engineering-books/
 
 ## Dependencies
 
-- **requirements.txt** – Full stack: `unstructured[pdf]`, `snowflake-connector-python`, `langchain`, `langchain-community`, `langchain-experimental`, `pandas`, `python-dotenv`. Needed for load + agent + ask_books.
+- **requirements.txt** – Full stack: `unstructured[pdf]`, `snowflake-connector-python`, `langchain-core`, `pandas`, `python-dotenv`. Needed for load + agent + ask_books. Agent uses Cortex COMPLETE() (no external LLM).
 - **requirements-agent-only.txt** – Same minus Unstructured; use when you only run the agent / ask_books (no PDF load). Much smaller venv.
 - **requirements-dev.txt** – Includes pytest for running tests.
 
