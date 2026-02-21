@@ -245,7 +245,7 @@ If no PDFs are found, it prints a message and exits without connecting to Snowfl
 ✅ All books loaded and embeddings created!
 ```
 
-**Expected results:** Tables `books` and `book_embeddings` are created or replaced with columns: `book_id`, `chunk_id`, `content`, `author`, `publication_year`, `section_title`, and `vector` (embeddings only). Author and publication year come from PDF metadata; section/chapter titles are inferred from the first short line per page. Row count in `books` equals total chunks across all PDFs.
+**Expected results:** Tables `books` and `book_embeddings` are created or replaced with columns: `book_id`, `chunk_id`, `content`, `author`, `publication_year`, `section_title`, and `vector` (embeddings only). Author and publication year come from PDF metadata; section/chapter titles are inferred from the first short line per page. Row count in `books` equals total chunks across all PDFs...
 
 ### Query embeddings
 
