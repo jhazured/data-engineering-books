@@ -88,7 +88,7 @@ Example:
 ```
 Chapter 5: Replication
 ├── Paragraph 1: Leaders and Followers (500 chars)
-├── Paragraph 2: Synchronous vs Async (600 chars)  
+├── Paragraph 2: Synchronous vs Async (600 chars)
 ├── Paragraph 3: Handling Failures (700 chars)
 └── [All combined into one chunk with section context]
 ```

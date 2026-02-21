@@ -63,7 +63,7 @@ def check_tesseract():
         print("  OK  tesseract (optional, for hi_res PDF chunking)")
     else:
         print("  -   tesseract not installed (optional; install for better PDF structure detection)")
-        print("      See scripts/unstructured-setup.md — macOS: brew install tesseract poppler")
+        print("      See docs/unstructured-setup.md — macOS: brew install tesseract poppler")
     return True
 
 

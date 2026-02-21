@@ -50,15 +50,33 @@ Then query in Snowflake (see [Query embeddings](#query-embeddings)) or use the [
 |------|-------------|
 | `books_pdf_folder/` | PDF books to ingest (place your `.pdf` files here). |
 | `scripts/load_books_to_snowflake.py` | Extract text from PDFs, chunk, upload to Snowflake; adds metadata (author, publication_year, section_title) from PDF metadata and per-page headings. Creates `books` and `book_embeddings` tables. |
+| `scripts/ask_books.py` | **Chat-style Q&A:** ask a question, get one synthesized answer from your book embeddings (uses Snowflake retriever + Mistral RAG). |
 | `scripts/mistral_snowflake_agent.py` | Mistral LLM agent: Q&A, RAG from vector DB, SQL execution in Snowflake, Pandas/CSV agent. |
+| `scripts/snowflake_retriever.py` | Snowflake-backed retriever for `book_embeddings`; used by `ask_books.py` and `personal_mistral`. |
 | `scripts/snowflake_helper.py` | Snowflake helper used by the Mistral agent to run SQL (reads config from `.env` or env vars). |
 | `scripts/snowflake_startup.py` | One-time setup: creates Snowflake warehouse, database, and schema if they don't exist (uses `.env`). |
 | `scripts/snowflake_teardown.py` | Teardown: drops the project database and warehouse (prompts for confirmation unless `--force`). |
 | `docs/queries.md` | Semantic search query examples (markdown). |
 | `docs/workbook.ipynb` | Snowflake notebook version of the queries (import into Snowsight). Generate with `python scripts/queries_to_workbook.py`. |
+| `docs/cortex-setup.md` | Snowflake Cortex (AI_EMBED) grants and setup. |
+| `docs/unstructured-setup.md` | Unstructured.io install and hi_res setup (tesseract, poppler). |
 | `.env.example` | Template for Snowflake and Hugging Face credentials; copy to `.env` and fill in. |
 | `requirements.txt` | Python dependencies (key versions pinned for reproducibility; see [Dependencies](#dependencies)). |
 | `scripts/verify_setup.py` | Verify Python packages and optional Snowflake connectivity. |
+| `docs/REVIEW.md` | Project review: completeness, section extraction, and RAG (Chat-style Q&A) setup. |
+
+---
+
+## Chat-style Q&A (ask and get one answer)
+
+To get a **single, considered answer** from your books (like ChatGPT/Claude over your corpus):
+
+```bash
+python scripts/ask_books.py "How does exactly-once delivery work in streaming?"
+python scripts/ask_books.py "What is the star schema?"
+```
+
+This runs semantic search over `book_embeddings` in Snowflake, retrieves relevant chunks, and the Mistral RAG chain returns one answer plus optional source (book, section). Requires Snowflake and Hugging Face env vars (see [Setup](#setup-first-time)).
 
 ---
 
@@ -147,7 +165,7 @@ The loader uses Unstructured.io. Without Tesseract it falls back to a "fast" str
 
 - **macOS:** `brew install tesseract poppler`
 - **Ubuntu/Debian:** `sudo apt-get install -y tesseract-ocr poppler-utils`
-- **Windows:** See [scripts/unstructured-setup.md](scripts/unstructured-setup.md)
+- **Windows:** See [docs/unstructured-setup.md](docs/unstructured-setup.md)
 
 Then optionally: `pip install "unstructured[local-inference]"`
 

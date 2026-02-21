@@ -54,8 +54,33 @@ STAGING_TABLE = "book_chunks_staging"
 EMBEDDINGS_TABLE = "book_embeddings"
 
 
+# Patterns that often indicate a chapter/section heading (for fallback when Unstructured has no Title).
+_HEADING_PATTERN = re.compile(
+    r"^(?:(?:Chapter|Part|Section|Appendix)\s*(?:\d+[\.:]?|\d*[IVXLCDM]+\.?)?\s*[-–:]?\s*)?(.{1,200})$",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_heading(line: str) -> bool:
+    """True if the first line of a chunk looks like a section heading (short, no sentence end)."""
+    line = (line or "").strip()
+    if not line or len(line) > 200:
+        return False
+    # Often headings don't end with . ! ?
+    if line.endswith((".", "!", "?")):
+        return False
+    # Numbered chapter/part/section
+    if _HEADING_PATTERN.match(line):
+        return True
+    # Short all-caps or title-case line
+    if len(line) <= 80 and (line.isupper() or line.istitle()):
+        return True
+    return False
+
+
 def _get_section_title(element) -> str:
-    """Derive section title from chunk element (e.g. first Title in orig_elements)."""
+    """Derive section title from chunk: Unstructured Title in orig_elements, or first-line fallback."""
+    # 1) From Unstructured's Title elements in the chunk's orig_elements
     try:
         orig = getattr(element.metadata, "orig_elements", None) or []
         for e in orig:
@@ -65,6 +90,12 @@ def _get_section_title(element) -> str:
                     return t[:500]
     except Exception:
         pass
+
+    # 2) Fallback: first line of chunk if it looks like a heading (chapter/section)
+    text = (getattr(element, "text", None) or "").strip()
+    first_line = text.split("\n")[0].strip() if text else ""
+    if first_line and _looks_like_heading(first_line):
+        return first_line[:500]
     return ""
 
 
