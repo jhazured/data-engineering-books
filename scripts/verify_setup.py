@@ -85,10 +85,18 @@ def check_cortex_model():
     """Check Cortex COMPLETE model (agent uses SNOWFLAKE.CORTEX.COMPLETE)."""
     model = os.environ.get("CORTEX_MODEL", "").strip()
     if not model:
-        print("  OK  CORTEX_MODEL not set (agent will use default: mistral-large2)")
+        print("  WARN CORTEX_MODEL not set; using default: mistral-large2")
     else:
         print(f"  OK  CORTEX_MODEL={model}")
     return True
+
+
+def _safe_cortex_model(name):
+    """Allow only alphanumeric and hyphen for COMPLETE model (no SQL injection)."""
+    s = (name or "mistral-large2").strip().lower()
+    if not s or not all(c.isalnum() or c == "-" for c in s) or len(s) > 64:
+        return "mistral-large2"
+    return s
 
 
 def check_cortex_complete():
@@ -99,9 +107,9 @@ def check_cortex_complete():
         if cfg.get("account") in (None, "", "YOUR_ACCOUNT") or not cfg.get("warehouse"):
             print("  -   Cortex COMPLETE: not configured (set SNOWFLAKE_* and SNOWFLAKE_WAREHOUSE to verify)")
             return True
-        model = os.environ.get("CORTEX_MODEL", "mistral-large2")
-        sql = "SELECT SNOWFLAKE.CORTEX.COMPLETE(%s, %s)"
-        rows = snowflake_helper.snowflake_run_new(sql, params=(model, "Reply with exactly: OK"))
+        model = _safe_cortex_model(os.environ.get("CORTEX_MODEL", "mistral-large2"))
+        sql = f"SELECT SNOWFLAKE.CORTEX.COMPLETE('{model}', %s)"
+        rows = snowflake_helper.snowflake_run_new(sql, params=("Reply with exactly: OK",))
         if rows and len(rows) > 0 and rows[0][0]:
             print("  OK  Cortex COMPLETE() smoke test passed")
         else:

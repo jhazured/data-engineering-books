@@ -13,7 +13,15 @@ except ImportError:
     import snowflake_helper
 
 # Overridable via env; must be a Cortex COMPLETE model name (e.g. mistral-large2, mixtral-8x7b, snowflake-arctic).
+# Model is embedded as a literal in SQL (Snowflake COMPLETE doesn't support bind for model); prompt is bound.
 CORTEX_MODEL = os.getenv("CORTEX_MODEL", "mistral-large2")
+
+# Safe model names: alphanumeric and hyphen only (no SQL injection).
+def _safe_model(name: str) -> str:
+    s = (name or "mistral-large2").strip().lower()
+    if not s or not all(c.isalnum() or c == "-" for c in s) or len(s) > 64:
+        return "mistral-large2"
+    return s
 
 _RAG_SYSTEM = (
     "Answer the question based only on the following context. "
@@ -22,9 +30,10 @@ _RAG_SYSTEM = (
 
 
 def _cortex_complete(prompt: str, config: Any = None) -> str:
-    """Call SNOWFLAKE.CORTEX.COMPLETE(model, prompt); return response string."""
-    sql = "SELECT SNOWFLAKE.CORTEX.COMPLETE(%s, %s)"
-    rows = snowflake_helper.snowflake_run_new(sql, params=(CORTEX_MODEL, prompt), config=config)
+    """Call SNOWFLAKE.CORTEX.COMPLETE(model, prompt); return response string. Model is literal; prompt is bound."""
+    model = _safe_model(CORTEX_MODEL)
+    sql = f"SELECT SNOWFLAKE.CORTEX.COMPLETE('{model}', %s)"
+    rows = snowflake_helper.snowflake_run_new(sql, params=(prompt,), config=config)
     if not rows or not isinstance(rows, list):
         return ""
     row = rows[0]
