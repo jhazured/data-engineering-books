@@ -33,14 +33,14 @@ python scripts/snowflake_startup.py
 
 # 4. Place your PDFs in books_pdf_folder/
 
-# 5. Load books and create embeddings in Snowflake
+# 5. Load books and create embeddings in Snowflake (default: incremental; use --mode full_reload --force to re-load existing books)
 python scripts/load_books_to_snowflake.py
 
 # 6. Verify setup (optional)
 python scripts/verify_setup.py
 ```
 
-Then query in Snowflake (see [Query embeddings](#query-embeddings)) or use the [Mistral agent](#mistral-agent) from Python.
+Then query in Snowflake (see [Query embeddings](#query-embeddings)) or use the [Mistral agent](#mistral-agent) from Python. Run tests with `pytest tests/` (optional: `pip install pytest`).
 
 ---
 
@@ -203,23 +203,7 @@ Set in `.env`:
 - `SNOWFLAKE_USER`, `SNOWFLAKE_PASSWORD`, `SNOWFLAKE_ACCOUNT`
 - `SNOWFLAKE_WAREHOUSE`, `SNOWFLAKE_DATABASE`, `SNOWFLAKE_SCHEMA`
 
-The **Mistral agent** (via `snowflake_helper.py`) uses these env vars. Load the env before running (e.g. `source .env` or use `python-dotenv`).
-
-**Option B – Inline in the loader**  
-Edit `scripts/load_books_to_snowflake.py` and set `SNOWFLAKE_CONFIG`:
-
-```python
-SNOWFLAKE_CONFIG = {
-    "user": "YOUR_USER",
-    "password": "YOUR_PASSWORD",
-    "account": "YOUR_ACCOUNT",
-    "warehouse": "YOUR_WAREHOUSE",
-    "database": "YOUR_DATABASE",
-    "schema": "PUBLIC",
-}
-```
-
-The **loader script** uses this dict; the Mistral agent still uses env vars (or you can pass a config into the helper).
+Both the **loader** and the **Mistral agent** read Snowflake config from the same env vars (loader uses `snowflake_helper`). Load the env before running (e.g. `source .env` or use `python-dotenv`).
 
 ### 3. Hugging Face (Mistral agent only)
 
@@ -241,7 +225,7 @@ Place your PDF files in `books_pdf_folder/`. The loader reads all `.pdf` files i
 
 ### 5. Chunk size (optional)
 
-In `scripts/load_books_to_snowflake.py`, adjust `CHUNK_SIZE` (default 1000 characters) to tune chunk size for embeddings.
+In `scripts/load_books_to_snowflake.py`, chunk size and overlap are configurable via env: `CHUNK_MAX_CHARS` (default 2000), `CHUNK_OVERLAP` (default 300), and optionally `CHUNK_NEW_AFTER_N_CHARS`, `CHUNK_COMBINE_UNDER_N_CHARS`.
 
 ---
 
@@ -342,13 +326,13 @@ csv_result = mistral_csv(my_df, "What is the average value of column X?")
 
 The agent uses `scripts/snowflake_helper.py` to run SQL in Snowflake; configure Snowflake via `.env` or environment variables (see [Setup](#setup-first-time)).
 
-**Note:** The Mistral agent uses LangChain’s `LLMChain`, which is deprecated in newer LangChain versions. You may see a deprecation warning; the code still works. Migrating to LCEL (LangChain Expression Language) is planned for a future update.
+The RAG chain uses LangChain LCEL (prompt | llm | StrOutputParser).
 
 ---
 
 ## Performance
 
-Performance depends on warehouse size, PDF count, and chunk size. Run the loader with your own data and measure extract time, embedding throughput, and query latency; scale warehouse or adjust `CHUNK_SIZE` as needed.
+Performance depends on warehouse size, PDF count, and chunk settings. As a reference: loading on the order of a dozen books (tens of thousands of chunks) typically takes several minutes on an X-Small warehouse (extract + embed). Run the loader with your own data and measure; scale warehouse or adjust `CHUNK_MAX_CHARS` / `CHUNK_OVERLAP` as needed.
 
 ---
 
@@ -358,7 +342,7 @@ Performance depends on warehouse size, PDF count, and chunk size. Run the loader
 |-------|------------|
 | **PDF extraction fails or returns empty text** | Ensure PDFs are text-based, not scanned images. Use OCR for image-only PDFs. |
 | **Snowflake connection timeout** | Verify warehouse is running (not suspended), credentials in `.env` or script are correct, and network allows outbound to Snowflake. |
-| **Embeddings creation slow** | Check warehouse size; consider scaling up. Reduce `CHUNK_SIZE` or number of PDFs per run to test. |
+| **Embeddings creation slow** | Check warehouse size; consider scaling up. Reduce `CHUNK_MAX_CHARS` or number of PDFs per run to test. |
 | **`AI_EMBED` / embeddings skipped** | Enable Snowflake Cortex AI: grant `SNOWFLAKE.CORTEX_EMBED_USER` (or `CORTEX_USER`) to your role. See [docs/cortex-setup.md](docs/cortex-setup.md). |
 | **Mistral agent import error** | Install optional packages: `pip install langchain langchain-community langchain-experimental`. Set `HUGGINGFACEHUB_API_TOKEN` and `repo_id` in the agent script. |
 | **Corrupted or password-protected PDFs** | Remove or fix PDFs; the loader skips or fails on unreadable files. |
@@ -370,8 +354,8 @@ Performance depends on warehouse size, PDF count, and chunk size. Run the loader
 - **Secrets:** Do not commit `.env`. It is listed in `.gitignore`.
 - **Scanned PDFs:** Image-only PDFs may need OCR before ingesting.
 - **Metadata:** The loader adds `author`, `publication_year`, and `section_title` (from PDF metadata and per-page first line). Use these in SQL for filtering and display (e.g. `WHERE author = '...'`, `ORDER BY publication_year`).
-- **Chunk size:** Smaller chunks give more precise retrieval; larger chunks give more context per chunk.
-- **Chunk overlap:** Standard RAG practice often uses overlapping chunks (e.g. 1000 chars with 200 char stride) to preserve context at boundaries. This implementation uses non-overlapping chunks; overlap can be added in the loader for improved retrieval.
+- **Chunk size and overlap:** The loader uses configurable chunk size and overlap (env: `CHUNK_MAX_CHARS` default 2000, `CHUNK_OVERLAP` default 300). Overlap preserves context at chunk boundaries and improves retrieval. Smaller chunks give more precise retrieval; larger chunks give more context per hit.
+- **Section titles:** Section/chapter labels come from Unstructured's `Title` elements when available, plus a first-line fallback for heading-like lines. For best heading detection, use Unstructured in `hi_res` mode (see [docs/unstructured-setup.md](docs/unstructured-setup.md)).
 
 ---
 

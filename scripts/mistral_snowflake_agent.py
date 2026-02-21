@@ -10,7 +10,7 @@ except ImportError:
 # HuggingFaceEndpoint reads HUGGINGFACEHUB_API_TOKEN from env automatically; do not overwrite.
 
 _llm = None
-_llm_chain = None
+_rag_chain = None
 
 
 def get_llm():
@@ -23,23 +23,24 @@ def get_llm():
     return _llm
 
 
-def get_llm_chain():
-    """Lazy-init prompt + LLM chain."""
-    global _llm_chain
-    if _llm_chain is None:
-        from langchain.chains import LLMChain
-        from langchain.prompts import PromptTemplate
-        template = """
-Following is the context. Based on the context, answer the question:
-Context:
-{context}
+def get_rag_chain():
+    """Lazy-init RAG chain using LCEL (prompt | llm | StrOutputParser)."""
+    global _rag_chain
+    if _rag_chain is None:
+        from langchain_core.prompts import PromptTemplate
+        from langchain_core.output_parsers import StrOutputParser
+        prompt = PromptTemplate.from_template(
+            "Answer the question based only on the following context. If the context does not contain enough information, say so.\n\nContext:\n{context}\n\nQuestion: {question}\n\nAnswer:"
+        )
+        llm = get_llm()
+        _rag_chain = prompt | llm | StrOutputParser()
+    return _rag_chain
 
-Question:
-{question}
-"""
-        prompt_final = PromptTemplate(template=template, input_variables=["context", "question"])
-        _llm_chain = LLMChain(prompt=prompt_final, llm=get_llm())
-    return _llm_chain
+
+def _run_rag(question: str, context_str: str) -> str:
+    """Run RAG chain: single invocation with context and question."""
+    chain = get_rag_chain()
+    return chain.invoke({"context": context_str, "question": question})
 
 
 def ask_mistral(question: str) -> str:
@@ -51,7 +52,7 @@ def personal_mistral(question: str, db: Any) -> str:
     """RAG: answer using your book chunks from a vector DB."""
     docs = db.similarity_search(query=question, k=4)
     context_str = "\n".join([doc.page_content for doc in docs])
-    return get_llm_chain().run(question=question, context=context_str)
+    return _run_rag(question, context_str)
 
 
 def personal_mistral_snowflake(question: str, db: Any) -> List:
@@ -62,7 +63,7 @@ def personal_mistral_snowflake(question: str, db: Any) -> List:
     """
     docs = db.similarity_search(query=question, k=4)
     context_str = "\n".join([doc.page_content for doc in docs])
-    result = get_llm_chain().run(question=question, context=context_str)
+    result = _run_rag(question, context_str)
 
     sql_blocks = re.findall(r"```sql(.*?)```", result, re.DOTALL | re.IGNORECASE)
     results_list = []

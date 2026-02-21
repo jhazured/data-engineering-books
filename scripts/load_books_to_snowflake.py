@@ -8,7 +8,8 @@ Load PDF books into Snowflake for semantic search.
 
 Usage:
   Set env vars (see .env.example), then:
-    python scripts/load_books_to_snowflake.py [--pdf-dir books_pdf_folder] [--resume]
+    python scripts/load_books_to_snowflake.py [--pdf-dir DIR] [--mode incremental|full_reload] [--force]
+  Optional env: CHUNK_MAX_CHARS (2000), CHUNK_OVERLAP (300), CHUNK_NEW_AFTER_N_CHARS, CHUNK_COMBINE_UNDER_N_CHARS.
 
 Requires: BOOKS_DB.BOOKS.book_chunks_staging and book_embeddings (run scripts/schema.sql first).
 """
@@ -41,12 +42,15 @@ except ImportError:
 
 
 # --- Chunking: aligned with Snowflake snowflake-arctic-embed-m-v1.5 (512-token context) ---
-# Unstructured best practice: by_title preserves section boundaries; soft max keeps chunks
-# within embedding model limits; overlap improves retrieval at boundaries.
-CHUNK_MAX_CHARS = 2000
-CHUNK_NEW_AFTER_N_CHARS = 1800
-CHUNK_OVERLAP = 300
-CHUNK_COMBINE_UNDER_N_CHARS = 200
+# Overlap preserves context at chunk boundaries (standard RAG practice). Overridable via env.
+def _chunk_config():
+    max_c = int(os.getenv("CHUNK_MAX_CHARS", "2000"))
+    overlap = int(os.getenv("CHUNK_OVERLAP", "300"))
+    overlap = min(max(0, overlap), max_c - 1)
+    new_after = int(os.getenv("CHUNK_NEW_AFTER_N_CHARS", str(max_c - 200)))
+    new_after = min(max(1, new_after), max_c)
+    combine = int(os.getenv("CHUNK_COMBINE_UNDER_N_CHARS", "200"))
+    return max_c, new_after, overlap, min(combine, new_after)
 
 EMBED_MODEL = "snowflake-arctic-embed-m-v1.5"
 DEFAULT_PDF_DIR = "books_pdf_folder"
@@ -118,21 +122,21 @@ def _author_from_metadata(elements) -> str:
 
 def partition_and_chunk(pdf_path: Path) -> list[tuple[str, str, str, int, int]]:
     """
-    Partition PDF and chunk with Unstructured best practice.
+    Partition PDF and chunk with Unstructured best practice (by_title + overlap).
     Returns list of (section_title, content, page_number, chunk_index).
     """
     if partition_pdf is None:
         raise ImportError("unstructured is required. pip install unstructured[pdf]")
-
+    max_characters, new_after_n_chars, overlap, combine_text_under_n_chars = _chunk_config()
     elements = partition_pdf(
         filename=str(pdf_path),
         strategy="auto",
         infer_table_structure=False,
         chunking_strategy="by_title",
-        max_characters=CHUNK_MAX_CHARS,
-        new_after_n_chars=CHUNK_NEW_AFTER_N_CHARS,
-        overlap=CHUNK_OVERLAP,
-        combine_text_under_n_chars=CHUNK_COMBINE_UNDER_N_CHARS,
+        max_characters=max_characters,
+        new_after_n_chars=new_after_n_chars,
+        overlap=overlap,
+        combine_text_under_n_chars=combine_text_under_n_chars,
     )
 
     rows = []
@@ -151,22 +155,27 @@ def load_one_book(
     conn,
     book_id: str,
     author: str,
-    resume_existing: bool,
+    mode: str,
 ) -> int:
-    """Process one PDF and insert into staging, then run embedding insert. Returns chunks inserted."""
+    """Process one PDF and insert into staging, then run embedding insert. Returns chunks inserted.
+    mode: 'incremental' = skip if book already in book_embeddings; 'full_reload' = delete then load.
+    """
     chunks = partition_and_chunk(pdf_path)
     if not chunks:
         return 0
 
-    if resume_existing:
+    if mode == "incremental":
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT 1 FROM book_embeddings WHERE book_id = %s LIMIT 1",
                 (book_id,),
             )
             if cur.fetchone():
-                print(f"  (resume) skipping {book_id} (already in book_embeddings)")
+                print(f"  (incremental) skipping {book_id} (already in book_embeddings)")
                 return 0
+    else:
+        with conn.cursor() as cur:
+            cur.execute(f"DELETE FROM {EMBEDDINGS_TABLE} WHERE book_id = %s", (book_id,))
 
     with conn.cursor() as cur:
         cur.execute(f"DELETE FROM {STAGING_TABLE} WHERE book_id = %s", (book_id,))
@@ -208,11 +217,21 @@ def main() -> int:
         help=f"Directory containing PDFs (default: {DEFAULT_PDF_DIR})",
     )
     parser.add_argument(
-        "--resume",
+        "--mode",
+        choices=("incremental", "full_reload"),
+        default="incremental",
+        help="incremental: skip books already in book_embeddings; full_reload: delete then re-load each book",
+    )
+    parser.add_argument(
+        "--force",
         action="store_true",
-        help="Skip books already present in book_embeddings",
+        help="Required for --mode full_reload (confirms destructive re-load)",
     )
     args = parser.parse_args()
+
+    if args.mode == "full_reload" and not args.force:
+        print("Error: --mode full_reload is destructive. Add --force to confirm.", file=sys.stderr)
+        return 1
 
     root = Path(__file__).resolve().parent.parent
     pdf_dir = root / args.pdf_dir
@@ -232,15 +251,15 @@ def main() -> int:
         return 1
 
     config = {
-        "user": os.getenv("SNOWFLAKE_USER"),
-        "password": os.getenv("SNOWFLAKE_PASSWORD"),
-        "account": os.getenv("SNOWFLAKE_ACCOUNT"),
-        "warehouse": os.getenv("SNOWFLAKE_WAREHOUSE"),
+        **snowflake_helper._get_config(),
         "database": os.getenv("SNOWFLAKE_DATABASE", "BOOKS_DB"),
         "schema": os.getenv("SNOWFLAKE_SCHEMA", "BOOKS"),
     }
     if not config.get("user") or not config.get("password") or not config.get("account"):
-        print("Error: Set SNOWFLAKE_USER, SNOWFLAKE_PASSWORD, SNOWFLAKE_ACCOUNT (and optionally WAREHOUSE, DATABASE, SCHEMA).", file=sys.stderr)
+        print("Error: Set SNOWFLAKE_USER, SNOWFLAKE_PASSWORD, SNOWFLAKE_ACCOUNT (see .env.example).", file=sys.stderr)
+        return 1
+    if config.get("user") == "YOUR_USER" or config.get("password") == "YOUR_PASSWORD" or config.get("account") == "YOUR_ACCOUNT":
+        print("Error: Replace placeholder SNOWFLAKE_* values in .env with your credentials.", file=sys.stderr)
         return 1
 
     pdfs = sorted(pdf_dir.glob("*.pdf"))
@@ -250,9 +269,12 @@ def main() -> int:
 
     print("Connecting to Snowflake...")
     print(f"Using database={config.get('database')}, schema={config.get('schema')}")
-    if args.resume:
-        print("Resume mode: skipping books already in book_embeddings.")
-    print(f"Chunking: max={CHUNK_MAX_CHARS}, soft_max={CHUNK_NEW_AFTER_N_CHARS}, overlap={CHUNK_OVERLAP}")
+    if args.mode == "incremental":
+        print("Mode: incremental (skipping books already in book_embeddings).")
+    else:
+        print("Mode: full_reload (re-loading each book; existing chunks for that book are deleted).")
+    max_c, new_after, overlap, _ = _chunk_config()
+    print(f"Chunking: max={max_c}, soft_max={new_after}, overlap={overlap}")
     print(f"Books to process: {len(pdfs)}\n")
 
     total_chunks = 0
@@ -262,7 +284,7 @@ def main() -> int:
             author = ""  # optional: parse from PDF metadata if needed
             print(f"Processing: {pdf_path.name}")
             try:
-                n = load_one_book(pdf_path, conn, book_id, author, args.resume)
+                n = load_one_book(pdf_path, conn, book_id, author, args.mode)
                 total_chunks += n
                 if n:
                     print(f"  → {n} chunks loaded.")

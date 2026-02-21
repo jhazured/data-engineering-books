@@ -31,7 +31,7 @@ data-engineering-books/
 ├── requirements-agent-only.txt   # Slim venv when not running PDF load (agent + Snowflake only)
 │
 ├── .github/workflows/
-│   └── verify.yml            # CI: install deps, run scripts/verify_setup.py
+│   └── verify.yml            # CI: install deps, pytest tests/, scripts/verify_setup.py
 │
 ├── books_pdf_folder/         # Put PDFs here (gitignore if desired; not in repo by default)
 │
@@ -73,6 +73,7 @@ data-engineering-books/
 | **snowflake_teardown.py** | Drop project db/warehouse. |
 | **verify_setup.py** | Verify deps and optional Snowflake connectivity. |
 | **queries_to_workbook.py** | Turn docs/queries.md into docs/workbook.ipynb for Snowsight. |
+| **tests/test_chunking.py** | Pytest: chunk config (env, overlap cap), heading-detection fallback. |
 
 ---
 
@@ -88,6 +89,7 @@ data-engineering-books/
 
 - **requirements.txt** – Full stack: `unstructured[pdf]`, `snowflake-connector-python`, `langchain`, `langchain-community`, `langchain-experimental`, `pandas`, `python-dotenv`. Needed for load + agent + ask_books.
 - **requirements-agent-only.txt** – Same minus Unstructured; use when you only run the agent / ask_books (no PDF load). Much smaller venv.
+- **requirements-dev.txt** – Includes pytest for running tests.
 
 ---
 
@@ -103,3 +105,11 @@ data-engineering-books/
 - Add **author** extraction from PDF metadata in the loader if you want it populated in `book_embeddings`.
 - Add **.cursorignore** with `.venv/` (and optionally `books_pdf_folder/`) if you want to reduce Cursor indexing.
 - Regenerate **workbook.ipynb** after editing `docs/queries.md`: `python scripts/queries_to_workbook.py`.
+
+---
+
+## Future Enhancement Ideas
+
+- **Streamlit UI:** A simple chat interface over the corpus for non-technical stakeholders or client demos.
+- **dbt model:** Model `books` and `book_embeddings` in dbt with tests (e.g. `not_null` on content, unique on chunk_id) to show analytics-engineering integration.
+- **GitHub Actions Snowflake integration test:** A workflow that runs the loader against a test Snowflake account (using GitHub secrets) and validates row counts and embedding dimensions so the CI badge reflects real integration.
