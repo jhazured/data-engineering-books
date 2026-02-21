@@ -23,13 +23,14 @@ TABLE = "book_embeddings"
 
 
 def _run_vector_search(query: str, k: int = 5, config: Optional[dict] = None) -> List[tuple]:
-    """Return rows (book_id, section_title, content, page_number) for top-k by similarity."""
+    """Return rows (book_id, section_title, content, page_number, similarity_score) for top-k by similarity."""
     # Bind only the query; model and LIMIT are safe literals (k is integer we control).
     k = max(1, min(k, 20))
     sql = f"""
-        SELECT book_id, section_title, content, page_number
+        SELECT book_id, section_title, content, page_number,
+               VECTOR_COSINE_SIMILARITY(AI_EMBED('{EMBED_MODEL}', %s), vector) AS similarity_score
         FROM {TABLE}
-        ORDER BY VECTOR_COSINE_SIMILARITY(AI_EMBED('{EMBED_MODEL}', %s), vector) DESC
+        ORDER BY similarity_score DESC
         LIMIT {k}
     """
     rows = snowflake_helper.snowflake_run_new(sql, params=(query,), config=config)
@@ -48,10 +49,18 @@ class SnowflakeBookRetriever:
     def similarity_search(self, query: str, k: int = 5, **kwargs: Any) -> List[Any]:
         """
         Return top-k chunks as LangChain Documents (page_content, metadata).
+        TODO: support filter kwarg for book_id/author filtering.
         So personal_mistral(question, this_retriever) works for RAG over your books.
         """
         rows = _run_vector_search(query, k=k, config=self.config)
-        meta = lambda row: {"book_id": row[0], "section_title": row[1] or "", "page_number": row[3]}
+        # row: (book_id, section_title, content, page_number, similarity_score)
+        def meta(row):
+            return {
+                "book_id": row[0],
+                "section_title": row[1] or "",
+                "page_number": row[3],
+                "similarity_score": row[4] if len(row) > 4 else None,
+            }
         if Document:
             return [Document(page_content=row[2] or "", metadata=meta(row)) for row in rows]
         # Fallback: simple object with .page_content and .metadata for personal_mistral

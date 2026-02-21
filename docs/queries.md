@@ -279,8 +279,8 @@ FROM book_embeddings
 GROUP BY book_id, author
 ORDER BY chunk_count DESC;
 
--- Books by publication year
-SELECT DISTINCT book_id, author, publication_year
+-- Books by publication year (author, title, publication_year from PDF metadata; run after load to smoke-test)
+SELECT DISTINCT book_id, author, title, publication_year
 FROM book_embeddings
 WHERE publication_year IS NOT NULL
 ORDER BY publication_year DESC;

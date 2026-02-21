@@ -26,3 +26,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# PDFs (avoid committing large/copyrighted files)
+books_pdf_folder/

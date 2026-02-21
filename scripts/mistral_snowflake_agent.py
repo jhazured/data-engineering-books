@@ -45,13 +45,16 @@ def _run_rag(question: str, context_str: str) -> str:
 
 def ask_mistral(question: str) -> str:
     """Simple Q&A (no context)."""
-    return get_llm()(question)
+    return str(get_llm().invoke(question))
 
 
-def personal_mistral(question: str, db: Any) -> str:
-    """RAG: answer using your book chunks from a vector DB."""
-    docs = db.similarity_search(query=question, k=4)
-    context_str = "\n".join([doc.page_content for doc in docs])
+def personal_mistral(question: str, db: Any, docs: Any = None) -> str:
+    """RAG: answer using your book chunks from a vector DB. If docs is provided, use them (one less Snowflake round-trip)."""
+    if docs is None:
+        docs = db.similarity_search(query=question, k=4)
+    else:
+        docs = docs[:4] if len(docs) > 4 else docs
+    context_str = "\n".join([getattr(doc, "page_content", str(doc)) for doc in docs])
     return _run_rag(question, context_str)
 
 

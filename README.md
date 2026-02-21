@@ -40,7 +40,7 @@ python scripts/load_books_to_snowflake.py
 python scripts/verify_setup.py
 ```
 
-Then query in Snowflake (see [Query embeddings](#query-embeddings)) or use the [Mistral agent](#mistral-agent) from Python. Run tests with `pytest tests/` (optional: `pip install pytest`).
+Then query in Snowflake (see [Query embeddings](#query-embeddings)) or use the [Mistral agent](#mistral-agent) from Python. Run tests with `pytest tests/` or `make test`. Optional: `make load`, `make verify`, `make dry-run`, `make workbook` (see Makefile).
 
 ---
 
@@ -63,7 +63,7 @@ Then query in Snowflake (see [Query embeddings](#query-embeddings)) or use the [
 | `.env.example` | Template for Snowflake and Hugging Face credentials; copy to `.env` and fill in. |
 | `requirements.txt` | Python dependencies (key versions pinned for reproducibility; see [Dependencies](#dependencies)). |
 | `scripts/verify_setup.py` | Verify Python packages and optional Snowflake connectivity. |
-| `docs/REVIEW.md` | Project review: completeness, section extraction, and RAG (Chat-style Q&A) setup. |
+| `docs/ARCHITECTURE.md` | Project layout, data flow, and file roles. |
 | `INDEX.md` | Index of project files with raw GitHub links. |
 
 ---

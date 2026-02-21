@@ -15,6 +15,14 @@ QUERIES_MD = os.path.join(REPO_ROOT, "docs", "queries.md")
 WORKBOOK_IPYNB = os.path.join(REPO_ROOT, "docs", "workbook.ipynb")
 
 
+def _source_to_lines(source: str) -> list:
+    """Normalize cell source to list of lines each ending with \\n (nbformat style)."""
+    lines = [line if line.endswith("\n") else line + "\n" for line in source.split("\n")]
+    if lines and not lines[-1].endswith("\n"):
+        lines[-1] = lines[-1].rstrip("\n") + "\n"
+    return lines
+
+
 def md_to_cells(content: str) -> list:
     """Parse queries.md into a list of { "type": "markdown"|"sql", "source": str }."""
     cells = []
@@ -58,24 +66,14 @@ def build_notebook(cells: list) -> dict:
     for c in cells:
         src = c["source"]
         if isinstance(src, str):
-            src = [line if line.endswith("\n") else line + "\n" for line in src.split("\n")]
-            if src and not src[-1].endswith("\n"):
-                src[-1] = src[-1].rstrip("\n") + "\n"
+            src = _source_to_lines(src)
         if c["type"] == "markdown":
-            if isinstance(src, str):
-                src = [line + "\n" for line in src.split("\n")]
-                if src and not src[-1].endswith("\n"):
-                    src[-1] = src[-1].rstrip("\n") + "\n"
             nb_cells.append({
                 "cell_type": "markdown",
                 "metadata": {},
                 "source": src,
             })
         else:
-            if isinstance(src, str):
-                src = [line + "\n" for line in src.split("\n")]
-                if src and not src[-1].endswith("\n"):
-                    src[-1] = src[-1].rstrip("\n") + "\n"
             nb_cells.append({
                 "cell_type": "code",
                 "metadata": {"snowflake": {"language": "sql"}},

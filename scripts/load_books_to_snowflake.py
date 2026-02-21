@@ -108,16 +108,42 @@ def _book_id_from_path(path: Path) -> str:
     return path.stem
 
 
-def _author_from_metadata(elements) -> str:
-    """Try to get author from first element metadata (e.g. PDF metadata)."""
+def _pdf_metadata(pdf_path: Path) -> tuple[str, int | None, str]:
+    """Extract author, publication year, and title from PDF metadata via pypdf. Returns (author, year, title)."""
     try:
-        first_el = elements[0] if elements else None
-        if first_el and hasattr(first_el, "metadata") and first_el.metadata:
-            # Unstructured can put filename; author often in PDF metadata
-            return getattr(first_el.metadata, "parent_id", "") or ""
+        from pypdf import PdfReader
+        reader = PdfReader(str(pdf_path))
+        meta = reader.metadata or {}
+        author = (meta.get("/Author") or meta.get("Author") or "")
+        if isinstance(author, bytes):
+            author = author.decode("utf-8", errors="replace")
+        author = (author or "").strip()[:500]
+        title = (meta.get("/Title") or meta.get("Title") or "")
+        if isinstance(title, bytes):
+            title = title.decode("utf-8", errors="replace")
+        title = (title or "").strip()[:500]
+        year = None
+        for key in ("/CreationDate", "/ModDate", "CreationDate", "ModDate"):
+            val = meta.get(key)
+            if val is None:
+                continue
+            val = str(val)  # pypdf can return datetime or other types
+            # PDF date format (D:YYYYMMDD...) or just YYYY
+            if val.startswith("D:") and len(val) >= 6:
+                try:
+                    year = int(val[2:6])
+                    break
+                except ValueError:
+                    pass
+            if len(val) >= 4 and val[:4].isdigit():
+                try:
+                    year = int(val[:4])
+                    break
+                except ValueError:
+                    pass
+        return author, year, title
     except Exception:
-        pass
-    return ""
+        return "", None, ""
 
 
 def partition_and_chunk(pdf_path: Path) -> list[tuple[str, str, str, int, int]]:
@@ -155,6 +181,8 @@ def load_one_book(
     conn,
     book_id: str,
     author: str,
+    publication_year: int | None,
+    title: str,
     mode: str,
 ) -> int:
     """Process one PDF and insert into staging, then run embedding insert. Returns chunks inserted.
@@ -179,23 +207,26 @@ def load_one_book(
 
     with conn.cursor() as cur:
         cur.execute(f"DELETE FROM {STAGING_TABLE} WHERE book_id = %s", (book_id,))
-        for idx, (section_title, content, page_number, _) in enumerate(chunks):
-            cur.execute(
-                f"""
-                INSERT INTO {STAGING_TABLE}
-                (book_id, author, section_title, content, page_number, chunk_index)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                """,
-                (book_id, author, section_title, content, page_number, idx),
-            )
+        rows = [
+            (book_id, author, publication_year, title, section_title, content, page_number, idx)
+            for idx, (section_title, content, page_number, _) in enumerate(chunks)
+        ]
+        cur.executemany(
+            f"""
+            INSERT INTO {STAGING_TABLE}
+            (book_id, author, publication_year, title, section_title, content, page_number, chunk_index)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            rows,
+        )
 
     # Compute embeddings in Snowflake and insert into book_embeddings (same model as query-time)
     with conn.cursor() as cur:
         cur.execute(
             f"""
             INSERT INTO {EMBEDDINGS_TABLE}
-            (book_id, author, section_title, content, page_number, chunk_index, vector)
-            SELECT book_id, author, section_title, content, page_number, chunk_index,
+            (book_id, author, publication_year, title, section_title, content, page_number, chunk_index, vector)
+            SELECT book_id, author, publication_year, title, section_title, content, page_number, chunk_index,
                    AI_EMBED('{EMBED_MODEL}', content) AS vector
             FROM {STAGING_TABLE}
             WHERE book_id = %s
@@ -227,6 +258,11 @@ def main() -> int:
         action="store_true",
         help="Required for --mode full_reload (confirms destructive re-load)",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Partition and chunk PDFs, print what would be loaded (book_id, author, year, title, chunk count); no Snowflake connection",
+    )
     args = parser.parse_args()
 
     if args.mode == "full_reload" and not args.force:
@@ -238,6 +274,36 @@ def main() -> int:
     if not pdf_dir.is_dir():
         print(f"Error: PDF directory not found: {pdf_dir}", file=sys.stderr)
         return 1
+
+    pdfs = sorted(pdf_dir.glob("*.pdf"))
+    if not pdfs:
+        print(f"No PDFs found in {pdf_dir}")
+        return 0
+
+    if args.dry_run:
+        try:
+            __import__("unstructured")
+        except ImportError:
+            print("Error: unstructured is required for --dry-run (e.g. pip install 'unstructured[pdf]').", file=sys.stderr)
+            return 1
+        max_c, new_after, overlap, _ = _chunk_config()
+        print("DRY RUN — no Snowflake connection. Would load:\n")
+        print(f"Chunking: max={max_c}, soft_max={new_after}, overlap={overlap}")
+        total = 0
+        for pdf_path in pdfs:
+            book_id = _book_id_from_path(pdf_path)
+            author, publication_year, title = _pdf_metadata(pdf_path)
+            try:
+                chunks = partition_and_chunk(pdf_path)
+                n = len(chunks)
+            except Exception as e:
+                print(f"  {pdf_path.name}: ERROR — {e}")
+                continue
+            total += n
+            title_display = title or "(no title in PDF metadata)"
+            print(f"  {pdf_path.name} → book_id={book_id}, author={author!r}, year={publication_year}, title={title_display!r}, chunks={n}")
+        print(f"\nTotal: {len(pdfs)} book(s), {total} chunks. Run without --dry-run to load into Snowflake.")
+        return 0
 
     if snowflake is None:
         print("Error: snowflake-connector-python is required.", file=sys.stderr)
@@ -262,11 +328,6 @@ def main() -> int:
         print("Error: Replace placeholder SNOWFLAKE_* values in .env with your credentials.", file=sys.stderr)
         return 1
 
-    pdfs = sorted(pdf_dir.glob("*.pdf"))
-    if not pdfs:
-        print(f"No PDFs found in {pdf_dir}")
-        return 0
-
     print("Connecting to Snowflake...")
     print(f"Using database={config.get('database')}, schema={config.get('schema')}")
     if args.mode == "incremental":
@@ -278,21 +339,29 @@ def main() -> int:
     print(f"Books to process: {len(pdfs)}\n")
 
     total_chunks = 0
+    failed = []
     with snowflake.connector.connect(**config) as conn:
         for pdf_path in pdfs:
             book_id = _book_id_from_path(pdf_path)
-            author = ""  # optional: parse from PDF metadata if needed
+            author, publication_year, title = _pdf_metadata(pdf_path)
+            if not title:
+                title = book_id  # fallback: filename stem
             print(f"Processing: {pdf_path.name}")
             try:
-                n = load_one_book(pdf_path, conn, book_id, author, args.mode)
+                n = load_one_book(pdf_path, conn, book_id, author, publication_year, title, args.mode)
                 total_chunks += n
                 if n:
                     print(f"  → {n} chunks loaded.")
             except Exception as e:
                 print(f"  Error: {e}", file=sys.stderr)
-                raise
+                failed.append((pdf_path.name, str(e)))
 
     print(f"\nDone. Total chunks: {total_chunks}")
+    if failed:
+        print(f"Failed ({len(failed)}):", file=sys.stderr)
+        for name, err in failed:
+            print(f"  - {name}: {err}", file=sys.stderr)
+        return 1
     return 0
 
 

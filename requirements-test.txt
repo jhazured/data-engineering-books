@@ -1,0 +1,9 @@
+# Lean deps for CI test job only (pytest + loader imports without unstructured[pdf]).
+# Run: pip install -r requirements-test.txt && pytest tests/
+# For full loader + verify_setup use requirements-dev.txt.
+
+snowflake-connector-python>=3.18
+pypdf>=4.0
+pandas>=2.0
+python-dotenv>=1.2
+pytest>=7.0

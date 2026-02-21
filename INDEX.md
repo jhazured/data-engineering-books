@@ -14,7 +14,7 @@ Base: `https://raw.githubusercontent.com/jhazured/data-engineering-books/main/`
 | **.github/workflows** | |
 | [verify.yml](https://raw.githubusercontent.com/jhazured/data-engineering-books/main/.github/workflows/verify.yml) | `https://raw.githubusercontent.com/jhazured/data-engineering-books/main/.github/workflows/verify.yml` |
 | **docs/** | |
-| [REVIEW.md](https://raw.githubusercontent.com/jhazured/data-engineering-books/main/docs/REVIEW.md) | `https://raw.githubusercontent.com/jhazured/data-engineering-books/main/docs/REVIEW.md` |
+| [ARCHITECTURE.md](https://raw.githubusercontent.com/jhazured/data-engineering-books/main/docs/ARCHITECTURE.md) | `https://raw.githubusercontent.com/jhazured/data-engineering-books/main/docs/ARCHITECTURE.md` |
 | [cortex-setup.md](https://raw.githubusercontent.com/jhazured/data-engineering-books/main/docs/cortex-setup.md) | `https://raw.githubusercontent.com/jhazured/data-engineering-books/main/docs/cortex-setup.md` |
 | [queries.md](https://raw.githubusercontent.com/jhazured/data-engineering-books/main/docs/queries.md) | `https://raw.githubusercontent.com/jhazured/data-engineering-books/main/docs/queries.md` |
 | [unstructured-setup.md](https://raw.githubusercontent.com/jhazured/data-engineering-books/main/docs/unstructured-setup.md) | `https://raw.githubusercontent.com/jhazured/data-engineering-books/main/docs/unstructured-setup.md` |

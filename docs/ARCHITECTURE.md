@@ -1,4 +1,4 @@
-# Data Engineering Books – Full Project Review
+# Data Engineering Books – Project Architecture
 
 ## Purpose
 
@@ -36,7 +36,7 @@ data-engineering-books/
 ├── books_pdf_folder/         # Put PDFs here (gitignore if desired; not in repo by default)
 │
 ├── docs/
-│   ├── REVIEW.md             # This file – full project review
+│   ├── ARCHITECTURE.md       # This file – project layout, data flow, file roles
 │   ├── cortex-setup.md       # Snowflake Cortex (AI_EMBED) grants and checks
 │   ├── queries.md            # Semantic search SQL examples
 │   ├── unstructured-setup.md # Unstructured.io install (hi_res, tesseract, poppler)
@@ -63,7 +63,7 @@ data-engineering-books/
 
 | File | Role |
 |------|------|
-| **ask_books.py** | Entry point for “ask and get one answer”; uses snowflake_retriever + personal_mistral. |
+| **ask_books.py** | Entry point for "ask and get one answer"; uses snowflake_retriever + personal_mistral. |
 | **load_books_to_snowflake.py** | Partition PDFs (Unstructured), chunk by_title, insert staging → book_embeddings with AI_EMBED. |
 | **snowflake_retriever.py** | Implements similarity_search over book_embeddings so RAG can use Snowflake as the vector store. |
 | **mistral_snowflake_agent.py** | personal_mistral (RAG), personal_mistral_snowflake (SQL gen + run), mistral_csv (pandas agent). |
@@ -81,7 +81,7 @@ data-engineering-books/
 
 1. **Ingest:** PDFs in `books_pdf_folder/` → `load_books_to_snowflake.py` → Unstructured partition + chunk → insert into `book_chunks_staging` → `INSERT INTO book_embeddings SELECT ..., AI_EMBED(...) FROM book_chunks_staging` (same DB/schema as schema.sql).
 2. **Query (SQL):** Run queries from `docs/queries.md` or `docs/workbook.ipynb` against `book_embeddings`.
-3. **Query (Chat):** `ask_books.py` → Snowflake retriever similarity_search → top-k chunks → personal_mistral(question, retriever) → one answer (+ optional sources).
+3. **Query (Chat):** `ask_books.py` → Snowflake retriever similarity_search → top-k chunks → personal_mistral(question, retriever, docs=...) → one answer (+ optional sources).
 
 ---
 
@@ -102,7 +102,6 @@ data-engineering-books/
 
 ## Optional Next Steps
 
-- Add **author** extraction from PDF metadata in the loader if you want it populated in `book_embeddings`.
 - Add **.cursorignore** with `.venv/` (and optionally `books_pdf_folder/`) if you want to reduce Cursor indexing.
 - Regenerate **workbook.ipynb** after editing `docs/queries.md`: `python scripts/queries_to_workbook.py`.
 

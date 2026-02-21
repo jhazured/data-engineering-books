@@ -13,6 +13,14 @@ except ImportError:
     snowflake = None
 
 
+def safe_id(name: str) -> str:
+    """Validate and normalize warehouse/database/schema name for safe use in DDL (alphanumeric + underscore)."""
+    s = (name or "").strip().upper()
+    if not s or not all(c.isalnum() or c == "_" for c in s):
+        raise ValueError("Warehouse/database/schema names must be alphanumeric or underscore.")
+    return s
+
+
 def _get_config() -> dict:
     """Build Snowflake config from env or default placeholder."""
     return {

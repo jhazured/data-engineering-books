@@ -77,12 +77,12 @@ for elem in elements[:5]:
 
 ## Chunking Strategy
 
-The script uses `chunk_by_title()` which:
+The loader uses `partition_pdf(..., chunking_strategy="by_title")` (Unstructured’s integrated API), which:
 
 1. **Preserves section boundaries** - Never splits across chapters/sections
 2. **Combines related elements** - Groups paragraphs under same heading
-3. **Maintains context** - Adds overlap between chunks
-4. **Respects size limits** - Hard max at 2000 chars, soft max at 1800
+3. **Maintains context** - Adds overlap between chunks (configurable via `CHUNK_OVERLAP`)
+4. **Respects size limits** - Hard max at 2000 chars (configurable via `CHUNK_MAX_CHARS`)
 
 Example:
 ```

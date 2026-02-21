@@ -31,6 +31,7 @@ except ImportError:
 
 try:
     import snowflake_helper
+    safe_id = snowflake_helper.safe_id
 except ImportError:
     print("snowflake_helper not found. Run from repo root: python scripts/snowflake_teardown.py")
     sys.exit(1)
@@ -51,12 +52,6 @@ def main():
     if account in (None, "", "YOUR_ACCOUNT") or user in (None, "", "YOUR_USER"):
         print("Set SNOWFLAKE_USER, SNOWFLAKE_ACCOUNT (and SNOWFLAKE_PASSWORD) in .env.")
         sys.exit(1)
-
-    def safe_id(name):
-        s = (name or "").strip().upper()
-        if not s or not all(c.isalnum() or c == "_" for c in s):
-            raise ValueError("Warehouse/database/schema names must be alphanumeric or underscore.")
-        return s
 
     try:
         wh, db, sc = safe_id(warehouse), safe_id(database), safe_id(schema)

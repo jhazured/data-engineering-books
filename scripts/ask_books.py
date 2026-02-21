@@ -56,7 +56,7 @@ def main() -> int:
         print("No relevant chunks found in book_embeddings. Check that you've run load_books_to_snowflake.py.", file=sys.stderr)
         return 1
 
-    answer = personal_mistral(question, retriever)
+    answer = personal_mistral(question, retriever, docs=docs)
     print(answer)
 
     # Optional: print sources (book + section)

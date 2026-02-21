@@ -1,13 +1,10 @@
 """
 Tests for chunk config and section-title fallback logic (no Snowflake or PDFs required).
+Path setup is in tests/conftest.py.
 """
 import os
 import pytest
-
-# Import chunk config and section-title helpers from loader (without running partition_pdf)
-import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # We test the loader's _chunk_config and _get_section_title / _looks_like_heading by
 # importing after mocking or by testing the behaviour via the public partition_and_chunk
@@ -53,6 +50,40 @@ def test_looks_like_heading():
     from scripts.load_books_to_snowflake import _looks_like_heading
     assert _looks_like_heading("Chapter 5: Replication") is True
     assert _looks_like_heading("Part I. Foundations") is True
+    assert _looks_like_heading("CHAPTER FIVE") is True  # all-caps
     assert _looks_like_heading("This is a long sentence that goes on and on and should not be treated as a heading.") is False
     assert _looks_like_heading("Short.") is False  # ends with period
     assert _looks_like_heading("") is False
+
+
+def test_book_id_from_path():
+    """Stable book ID is filename without extension."""
+    from scripts.load_books_to_snowflake import _book_id_from_path
+    assert _book_id_from_path(Path("designing-data-intensive-applications.pdf")) == "designing-data-intensive-applications"
+    assert _book_id_from_path(Path("/some/dir/book.pdf")) == "book"
+
+
+def test_get_section_title_from_metadata():
+    """Section title comes from Unstructured Title in orig_elements when present (not first-line fallback)."""
+    from types import SimpleNamespace
+    from scripts.load_books_to_snowflake import _get_section_title
+    title_el = SimpleNamespace(category="Title", text="Replication")
+    meta = SimpleNamespace(orig_elements=[title_el])
+    el = SimpleNamespace(metadata=meta, text="Some body.")  # first line not a heading; forces orig_elements path
+    assert _get_section_title(el) == "Replication"
+
+
+def test_get_section_title_fallback_heading():
+    """Section title fallback: first line used when it looks like a heading."""
+    from scripts.load_books_to_snowflake import _get_section_title
+    meta = type("M", (), {"orig_elements": []})()
+    el = type("E", (), {"metadata": meta, "text": "Chapter 5: Replication\n\nContent here."})()
+    assert _get_section_title(el) == "Chapter 5: Replication"
+
+
+def test_get_section_title_fallback_empty():
+    """Section title fallback: empty when no Title and first line not a heading."""
+    from scripts.load_books_to_snowflake import _get_section_title
+    meta = type("M", (), {"orig_elements": []})()
+    el = type("E", (), {"metadata": meta, "text": "This is normal paragraph text."})()
+    assert _get_section_title(el) == ""

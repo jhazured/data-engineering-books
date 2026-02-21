@@ -16,4 +16,5 @@ langchain-community>=0.3
 langchain-experimental>=0.3
 pandas>=2.0
 python-dotenv>=1.2
-unstructured[pdf]>=0.20
+pypdf>=4.0
+unstructured[pdf]>=0.20,<1.0

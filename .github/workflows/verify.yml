@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  verify:
+  test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -22,17 +22,32 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: "pip"
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Install dev dependencies (pytest)
-        run: pip install pytest
+      - name: Install test dependencies (lean)
+        run: pip install -r requirements-test.txt
 
       - name: Create .env for CI
         run: cp .env.example .env
 
       - name: Run tests
         run: pytest tests/ -v --tb=short
+
+  verify:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install full dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Create .env for CI
+        run: cp .env.example .env
 
       - name: Run verify_setup
         run: python scripts/verify_setup.py

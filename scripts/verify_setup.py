@@ -94,6 +94,18 @@ def check_huggingface():
     return True
 
 
+def check_mistral_repo():
+    """Check Mistral model repo (optional; agent uses default if unset)."""
+    repo = os.environ.get("MISTRAL_REPO_ID", "")
+    if not repo:
+        print("  -   MISTRAL_REPO_ID not set (agent will use default repo)")
+    elif repo == "YOUR_MISTRAL_MODEL_REPO" or "YOUR_" in repo:
+        print("  WARN MISTRAL_REPO_ID is still placeholder; set to your model repo for the Mistral agent")
+    else:
+        print("  OK  MISTRAL_REPO_ID set")
+    return True
+
+
 def check_snowflake_connection():
     """Optional: try Snowflake connection if snowflake_helper is available."""
     try:
@@ -121,8 +133,9 @@ def main():
     check_tesseract()
     print("\nConfiguration:")
     check_env()
-    print("\nOptional (Hugging Face):")
+    print("\nOptional (Hugging Face / Mistral):")
     check_huggingface()
+    check_mistral_repo()
     print("\nOptional (Snowflake):")
     check_snowflake_connection()
     print("-" * 40)
