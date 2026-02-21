@@ -1,13 +1,19 @@
-# Load books and embeddings (reproducible install)
-# Script uses Unstructured.io for PDF chunking; pypdf for metadata
-unstructured[pdf]>=0.10.0
-pypdf>=3.0.0
-python-dotenv>=1.0.0
-snowflake-connector-python>=3.8.0,<4
-pandas>=1.5.0,<3
+# Data engineering books project: load PDFs to Snowflake + Mistral/Snowflake agent.
+# Install: python -m venv .venv && .venv/bin/pip install -r requirements.txt
+#
+# Used by:
+#   scripts/load_books_to_snowflake.py  -> unstructured[pdf], snowflake
+#   scripts/mistral_snowflake_agent.py   -> langchain, langchain-community, langchain-experimental, pandas
+#   scripts/snowflake_helper.py          -> snowflake
+#
+# unstructured[pdf] pulls in unstructured-inference (and torch) for PDF layout;
+# needed for partition_pdf() even with strategy="fast" due to package imports.
+# For agent-only (no load_books): use requirements-agent-only.txt for a small venv.
 
-# Mistral agent (LangChain + HuggingFace)
-huggingface_hub>=0.20.0
-langchain>=0.1.0,<0.4
-langchain-community>=0.0.10,<0.4
-langchain-experimental>=0.0.10,<0.4
+snowflake-connector-python>=3.18
+langchain>=0.3
+langchain-community>=0.3
+langchain-experimental>=0.3
+pandas>=2.0
+python-dotenv>=1.2
+unstructured[pdf]>=0.20

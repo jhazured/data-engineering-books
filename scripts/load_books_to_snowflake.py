@@ -1,366 +1,247 @@
+#!/usr/bin/env python3
 """
-Production-grade PDF loader using Unstructured.io for semantic chunking.
+Load PDF books into Snowflake for semantic search.
 
-Processes and uploads each book to Snowflake one at a time (resumable).
-Use --resume to skip books already in BOOKS and continue from the next.
+- Chunks PDFs with Unstructured.io best practice (by_title, max_characters, overlap).
+- Inserts text into Snowflake staging; embeddings are computed in Snowflake via AI_EMBED
+  so query-time semantic search uses the same model (snowflake-arctic-embed-m-v1.5).
 
-Requirements:
-    pip install unstructured[pdf] snowflake-connector-python pandas python-dotenv
+Usage:
+  Set env vars (see .env.example), then:
+    python scripts/load_books_to_snowflake.py [--pdf-dir books_pdf_folder] [--resume]
 
-Optional for better quality (recommended):
-    pip install "unstructured[local-inference]"
-    
-    This requires:
-    - tesseract (for OCR)
-    - poppler (for PDF processing)
-    
-    Installation:
-    - macOS: brew install tesseract poppler
-    - Ubuntu: apt-get install tesseract-ocr poppler-utils
-    - Windows: see https://unstructured-io.github.io/unstructured/installing.html
+Requires: BOOKS_DB.BOOKS.book_chunks_staging and book_embeddings (run scripts/schema.sql first).
 """
 
+from __future__ import annotations
+
+import argparse
 import os
+import re
 import sys
-import contextlib
-import io
-import snowflake.connector
-import snowflake.connector.errors as snowflake_errors
-import pandas as pd
+from pathlib import Path
 
-INSERT_BATCH_SIZE = 500
+# Add project root for imports
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+try:
+    from unstructured.partition.pdf import partition_pdf
+except ImportError:
+    partition_pdf = None
 
-def _log(msg: str) -> None:
-    """Print and flush so progress appears immediately."""
-    print(msg)
-    sys.stdout.flush()
+try:
+    import snowflake.connector
+except ImportError:
+    snowflake = None
 
-
-# Ensure we can resolve snowflake_helper for config
-_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-_REPO_ROOT = os.path.dirname(_SCRIPT_DIR)
 try:
     from scripts import snowflake_helper
 except ImportError:
-    import sys
-    if _REPO_ROOT not in sys.path:
-        sys.path.insert(0, _REPO_ROOT)
-    if _SCRIPT_DIR not in sys.path:
-        sys.path.insert(0, _SCRIPT_DIR)
     import snowflake_helper
 
-# Load .env if available
-try:
-    from dotenv import load_dotenv
-    load_dotenv(os.path.join(_REPO_ROOT, ".env"))
-except ImportError:
-    pass
 
-PDF_FOLDER = os.path.join(_REPO_ROOT, "books_pdf_folder")
+# --- Chunking: aligned with Snowflake snowflake-arctic-embed-m-v1.5 (512-token context) ---
+# Unstructured best practice: by_title preserves section boundaries; soft max keeps chunks
+# within embedding model limits; overlap improves retrieval at boundaries.
+CHUNK_MAX_CHARS = 2000
+CHUNK_NEW_AFTER_N_CHARS = 1800
+CHUNK_OVERLAP = 300
+CHUNK_COMBINE_UNDER_N_CHARS = 200
 
-# UNSTRUCTURED CHUNKING PARAMETERS
-# These are optimized for technical books with clear section structure
-CHUNK_MAX_CHARACTERS = 2000  # Hard maximum
-CHUNK_NEW_AFTER = 1800  # Soft maximum - start new chunk after this many chars
-CHUNK_COMBINE_UNDER = 500  # Combine small elements under this size
-CHUNK_OVERLAP = 300  # Overlap between chunks for context preservation
-
-# Snowflake Cortex embedding model
-EMBEDDING_MODEL = "snowflake-arctic-embed-m-v1.5"
+EMBED_MODEL = "snowflake-arctic-embed-m-v1.5"
+DEFAULT_PDF_DIR = "books_pdf_folder"
+STAGING_TABLE = "book_chunks_staging"
+EMBEDDINGS_TABLE = "book_embeddings"
 
 
-def get_snowflake_config():
-    """Unify config with snowflake_helper (env vars or placeholders)."""
-    return snowflake_helper._get_config()
-
-
-def get_pdf_metadata(pdf_path):
-    """Extract author and publication year from PDF metadata using pypdf."""
-    author = "Unknown"
-    publication_year = None
-    
+def _get_section_title(element) -> str:
+    """Derive section title from chunk element (e.g. first Title in orig_elements)."""
     try:
-        from pypdf import PdfReader
-        with open(pdf_path, 'rb') as f:
-            pdf = PdfReader(f)
-            meta = pdf.metadata or {}
-            
-            # Try different metadata fields
-            author = meta.get('/Author') or meta.get('Author') or author
-            if isinstance(author, bytes):
-                author = author.decode("utf-8", errors="replace")
-            
-            # Extract year from creation date
-            creation = meta.get('/CreationDate') or meta.get('CreationDate') or ""
-            if isinstance(creation, str) and creation.startswith("D:") and len(creation) >= 6:
-                year_str = creation[2:6]
-                if year_str.isdigit():
-                    publication_year = int(year_str)
-    except Exception as e:
-        _log(f"    Warning: Could not extract metadata: {e}")
-    
-    return author, publication_year
+        orig = getattr(element.metadata, "orig_elements", None) or []
+        for e in orig:
+            if getattr(e, "category", None) == "Title":
+                t = (e.text or "").strip()
+                if t:
+                    return t[:500]
+    except Exception:
+        pass
+    return ""
 
 
-def partition_and_chunk_pdf(pdf_path):
+def _book_id_from_path(path: Path) -> str:
+    """Stable book identifier from filename (no extension)."""
+    return path.stem
+
+
+def _author_from_metadata(elements) -> str:
+    """Try to get author from first element metadata (e.g. PDF metadata)."""
+    try:
+        first_el = elements[0] if elements else None
+        if first_el and hasattr(first_el, "metadata") and first_el.metadata:
+            # Unstructured can put filename; author often in PDF metadata
+            return getattr(first_el.metadata, "parent_id", "") or ""
+    except Exception:
+        pass
+    return ""
+
+
+def partition_and_chunk(pdf_path: Path) -> list[tuple[str, str, str, int, int]]:
     """
-    Use Unstructured.io to partition PDF and chunk by title.
-    
-    This approach:
-    1. Detects document structure (titles, paragraphs, lists, tables)
-    2. Preserves section boundaries when chunking
-    3. Combines related elements intelligently
-    4. Maintains hierarchical context
+    Partition PDF and chunk with Unstructured best practice.
+    Returns list of (section_title, content, page_number, chunk_index).
     """
-    try:
-        from unstructured.partition.pdf import partition_pdf
-        from unstructured.chunking.title import chunk_by_title
-    except ImportError as e:
-        _log("ERROR: unstructured library not installed properly.")
-        _log("Install with: pip install 'unstructured[pdf]'")
-        _log("For better quality, also install: pip install 'unstructured[local-inference]'")
-        raise e
-    
-    _log(f"    Partitioning PDF (detecting structure)...")
-    
-    # Partition the PDF - this detects titles, paragraphs, lists, tables, etc.
-    # strategy="auto" will use the best available method
-    # For production, consider "hi_res" with local-inference installed
-    # Suppress PDF library stderr (e.g. "Cannot set non-stroke color") during partition
-    def _run_partition(**kwargs):
-        with open(os.devnull, "w") as devnull:
-            with contextlib.redirect_stderr(devnull):
-                return partition_pdf(filename=pdf_path, **kwargs)
+    if partition_pdf is None:
+        raise ImportError("unstructured is required. pip install unstructured[pdf]")
 
-    try:
-        elements = _run_partition(
-            strategy="auto",
-            infer_table_structure=True,
-            include_page_breaks=False,
-        )
-        _log(f"    Detected {len(elements)} document elements")
-    except Exception as e:
-        err_msg = str(e).lower()
-        if "tesseract" in err_msg or "hi_res" in err_msg:
-            _log(f"    Note: hi_res unavailable (tesseract not installed). Using fast strategy.")
-        else:
-            _log(f"    Partitioning issue: {e}")
-            _log(f"    Falling back to fast strategy...")
-        elements = _run_partition(strategy="fast", include_page_breaks=False)
-        _log(f"    Detected {len(elements)} document elements (fast mode)")
-    
-    # Chunk by title - this preserves section boundaries
-    _log(f"    Chunking by title (preserving section structure)...")
-    chunks = chunk_by_title(
-        elements=elements,
-        max_characters=CHUNK_MAX_CHARACTERS,  # Hard max
-        new_after_n_chars=CHUNK_NEW_AFTER,  # Soft max - prefer breaking here
-        combine_text_under_n_chars=CHUNK_COMBINE_UNDER,  # Combine tiny elements
-        overlap=CHUNK_OVERLAP,  # Overlap for context
-        overlap_all=True,  # Apply overlap between all chunks
+    elements = partition_pdf(
+        filename=str(pdf_path),
+        strategy="auto",
+        infer_table_structure=False,
+        chunking_strategy="by_title",
+        max_characters=CHUNK_MAX_CHARS,
+        new_after_n_chars=CHUNK_NEW_AFTER_N_CHARS,
+        overlap=CHUNK_OVERLAP,
+        combine_text_under_n_chars=CHUNK_COMBINE_UNDER_N_CHARS,
     )
-    
-    _log(f"    Created {len(chunks)} semantic chunks")
-    
-    # Extract chunk data
-    chunk_data = []
-    for idx, chunk in enumerate(chunks):
-        # Get the text content
-        content = chunk.text
-        
-        # Get metadata
-        metadata = chunk.metadata
-        
-        # Extract section title from metadata if available
-        # Unstructured metadata can be a dict or object; support both
-        def _get(obj, key, default=None):
-            if obj is None:
-                return default
-            if isinstance(obj, dict):
-                return obj.get(key, default)
-            return getattr(obj, key, default)
 
-        section_title = None
-        cat = _get(metadata, 'category') or getattr(chunk, 'category', None)
-        if cat == 'Title':
-            section_title = (content or '')[:120]
-        if not section_title:
-            parent_id = _get(metadata, 'parent_id')
-            if parent_id:
-                for elem in elements:
-                    eid = _get(getattr(elem, 'metadata', None), 'element_id')
-                    if eid == parent_id:
-                        elem_cat = getattr(elem, 'category', None) or _get(getattr(elem, 'metadata', None), 'category')
-                        if elem_cat == 'Title':
-                            section_title = (getattr(elem, 'text', None) or '')[:120]
-                            break
-        
-        chunk_data.append({
-            'chunk_id': idx,
-            'content': content,
-            'section_title': section_title,
-        })
-    
-    return chunk_data
+    rows = []
+    for idx, el in enumerate(elements):
+        text = (getattr(el, "text", None) or "").strip()
+        if not text:
+            continue
+        section_title = _get_section_title(el)
+        page = getattr(getattr(el, "metadata", None), "page_number", None) or 0
+        rows.append((section_title, text, page, idx))
+    return rows
 
 
-def get_existing_book_ids(conn):
-    """Return set of book_id already in BOOKS table (for resume)."""
-    try:
-        with conn.cursor() as cs:
-            cs.execute("SELECT DISTINCT book_id FROM books")
-            return {row[0] for row in cs.fetchall()}
-    except snowflake_errors.ProgrammingError:
-        return set()
+def load_one_book(
+    pdf_path: Path,
+    conn,
+    book_id: str,
+    author: str,
+    resume_existing: bool,
+) -> int:
+    """Process one PDF and insert into staging, then run embedding insert. Returns chunks inserted."""
+    chunks = partition_and_chunk(pdf_path)
+    if not chunks:
+        return 0
 
-
-def insert_book_chunks(conn, book_id, author, publication_year, chunks):
-    """Insert one book's chunks into BOOKS in batches."""
-    cols = ["book_id", "chunk_id", "content", "author", "publication_year", "section_title"]
-    rows = [
-        (book_id, c["chunk_id"], c["content"], author, publication_year, c["section_title"])
-        for c in chunks
-    ]
-    with conn.cursor() as cs:
-        for i in range(0, len(rows), INSERT_BATCH_SIZE):
-            batch = rows[i : i + INSERT_BATCH_SIZE]
-            cs.executemany(
-                "INSERT INTO books (book_id, chunk_id, content, author, publication_year, section_title) VALUES (%s, %s, %s, %s, %s, %s)",
-                batch,
+    if resume_existing:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM book_embeddings WHERE book_id = %s LIMIT 1",
+                (book_id,),
             )
-    _log(f"    ✓ Uploaded {len(rows)} rows to BOOKS")
+            if cur.fetchone():
+                print(f"  (resume) skipping {book_id} (already in book_embeddings)")
+                return 0
+
+    with conn.cursor() as cur:
+        cur.execute(f"DELETE FROM {STAGING_TABLE} WHERE book_id = %s", (book_id,))
+        for idx, (section_title, content, page_number, _) in enumerate(chunks):
+            cur.execute(
+                f"""
+                INSERT INTO {STAGING_TABLE}
+                (book_id, author, section_title, content, page_number, chunk_index)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (book_id, author, section_title, content, page_number, idx),
+            )
+
+    # Compute embeddings in Snowflake and insert into book_embeddings (same model as query-time)
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            INSERT INTO {EMBEDDINGS_TABLE}
+            (book_id, author, section_title, content, page_number, chunk_index, vector)
+            SELECT book_id, author, section_title, content, page_number, chunk_index,
+                   AI_EMBED('{EMBED_MODEL}', content) AS vector
+            FROM {STAGING_TABLE}
+            WHERE book_id = %s
+            """,
+            (book_id,),
+        )
+
+    with conn.cursor() as cur:
+        cur.execute(f"DELETE FROM {STAGING_TABLE} WHERE book_id = %s", (book_id,))
+
+    return len(chunks)
 
 
-def main():
-    resume = "--resume" in sys.argv or "-r" in sys.argv
-    _log("=" * 80)
-    _log("PDF LOADER - Using Unstructured.io for semantic chunking")
-    _log("Processing and uploading each book individually (resumable).")
-    if resume:
-        _log("Resume mode: skipping books already in BOOKS.")
-    _log("=" * 80)
-    _log("")
-    
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Load PDF books into Snowflake for semantic search.")
+    parser.add_argument(
+        "--pdf-dir",
+        default=DEFAULT_PDF_DIR,
+        help=f"Directory containing PDFs (default: {DEFAULT_PDF_DIR})",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Skip books already present in book_embeddings",
+    )
+    args = parser.parse_args()
+
+    root = Path(__file__).resolve().parent.parent
+    pdf_dir = root / args.pdf_dir
+    if not pdf_dir.is_dir():
+        print(f"Error: PDF directory not found: {pdf_dir}", file=sys.stderr)
+        return 1
+
+    if snowflake is None:
+        print("Error: snowflake-connector-python is required.", file=sys.stderr)
+        return 1
+
     try:
-        import unstructured
-        _log(f"✓ Unstructured.io version: {getattr(unstructured, '__version__', '?')}")
+        __import__("unstructured")
+        print("✓ Unstructured.io available")
     except ImportError:
-        _log("✗ ERROR: unstructured library not found")
-        _log("  Install with: pip install 'unstructured[pdf]'")
-        return
-    
-    _log("")
-    _log("Connecting to Snowflake...")
-    config = get_snowflake_config()
-    database = (config.get("database") or "").strip().upper()
-    schema = (config.get("schema") or "PUBLIC").strip().upper()
-    if not database or not schema:
-        _log("ERROR: SNOWFLAKE_DATABASE and SNOWFLAKE_SCHEMA must be set in .env")
-        return
-    if not all(c.isalnum() or c == "_" for c in database + schema):
-        _log("ERROR: SNOWFLAKE_DATABASE and SNOWFLAKE_SCHEMA must be alphanumeric (or underscore)")
-        return
-    
-    conn = snowflake.connector.connect(**config)
-    try:
-        with conn.cursor() as cs:
-            cs.execute(f"USE DATABASE {database}")
-            cs.execute(f"USE SCHEMA {schema}")
-        _log(f"Using database={database}, schema={schema}")
-        _log("")
-        
-        books_schema_sql = """
-            CREATE OR REPLACE TABLE books (
-                book_id STRING,
-                chunk_id INT,
-                content STRING,
-                author STRING,
-                publication_year INT,
-                section_title STRING
-            )
-        """
-        if resume:
-            with conn.cursor() as cs:
-                cs.execute("CREATE TABLE IF NOT EXISTS books (book_id STRING, chunk_id INT, content STRING, author STRING, publication_year INT, section_title STRING)")
-            existing = get_existing_book_ids(conn)
-            _log(f"Found {len(existing)} book(s) already in BOOKS (will skip).")
-        else:
-            with conn.cursor() as cs:
-                cs.execute(books_schema_sql)
-            existing = set()
-        _log("")
-        
-        if not os.path.isdir(PDF_FOLDER):
-            _log(f"PDF folder not found: {PDF_FOLDER}")
-            return
-        pdf_files = sorted(f for f in os.listdir(PDF_FOLDER) if f.lower().endswith(".pdf"))
-        if not pdf_files:
-            _log(f"No PDF files in {PDF_FOLDER}")
-            return
-        
-        to_process = [f for f in pdf_files if os.path.splitext(f)[0] not in existing]
-        skipped = len(pdf_files) - len(to_process)
-        if skipped:
-            _log(f"Skipping {skipped} already-loaded book(s).")
-        _log(f"Books to process: {len(to_process)}")
-        _log(f"Chunking settings: max={CHUNK_MAX_CHARACTERS}, soft_max={CHUNK_NEW_AFTER}, overlap={CHUNK_OVERLAP}")
-        _log("")
-        
-        total_chunks = 0
-        for filename in to_process:
-            pdf_path = os.path.join(PDF_FOLDER, filename)
-            book_id = os.path.splitext(filename)[0]
+        print("Error: unstructured is required (e.g. pip install 'unstructured[pdf]').", file=sys.stderr)
+        return 1
+
+    config = {
+        "user": os.getenv("SNOWFLAKE_USER"),
+        "password": os.getenv("SNOWFLAKE_PASSWORD"),
+        "account": os.getenv("SNOWFLAKE_ACCOUNT"),
+        "warehouse": os.getenv("SNOWFLAKE_WAREHOUSE"),
+        "database": os.getenv("SNOWFLAKE_DATABASE", "BOOKS_DB"),
+        "schema": os.getenv("SNOWFLAKE_SCHEMA", "BOOKS"),
+    }
+    if not config.get("user") or not config.get("password") or not config.get("account"):
+        print("Error: Set SNOWFLAKE_USER, SNOWFLAKE_PASSWORD, SNOWFLAKE_ACCOUNT (and optionally WAREHOUSE, DATABASE, SCHEMA).", file=sys.stderr)
+        return 1
+
+    pdfs = sorted(pdf_dir.glob("*.pdf"))
+    if not pdfs:
+        print(f"No PDFs found in {pdf_dir}")
+        return 0
+
+    print("Connecting to Snowflake...")
+    print(f"Using database={config.get('database')}, schema={config.get('schema')}")
+    if args.resume:
+        print("Resume mode: skipping books already in book_embeddings.")
+    print(f"Chunking: max={CHUNK_MAX_CHARS}, soft_max={CHUNK_NEW_AFTER_N_CHARS}, overlap={CHUNK_OVERLAP}")
+    print(f"Books to process: {len(pdfs)}\n")
+
+    total_chunks = 0
+    with snowflake.connector.connect(**config) as conn:
+        for pdf_path in pdfs:
+            book_id = _book_id_from_path(pdf_path)
+            author = ""  # optional: parse from PDF metadata if needed
+            print(f"Processing: {pdf_path.name}")
             try:
-                _log(f"Processing: {filename}")
-                author, publication_year = get_pdf_metadata(pdf_path)
-                _log(f"    Author: {author}, Year: {publication_year or 'Unknown'}")
-                chunks = partition_and_chunk_pdf(pdf_path)
-                if not chunks:
-                    _log(f"    No chunks; skipping.")
-                    _log("")
-                    continue
-                insert_book_chunks(conn, book_id, author, publication_year, chunks)
-                total_chunks += len(chunks)
-                _log("")
+                n = load_one_book(pdf_path, conn, book_id, author, args.resume)
+                total_chunks += n
+                if n:
+                    print(f"  → {n} chunks loaded.")
             except Exception as e:
-                _log(f"    ✗ Error: {e}")
-                _log("")
-                continue
-        
-        if total_chunks == 0 and not existing:
-            _log("No chunks uploaded. Add PDFs and run again (or use without --resume to start fresh).")
-            return
-        
-        _log("Creating embeddings with AI_EMBED (this may take several minutes)...")
-        try:
-            with conn.cursor() as cs:
-                cs.execute(f"""
-                    CREATE OR REPLACE TABLE book_embeddings AS
-                    SELECT
-                        book_id,
-                        chunk_id,
-                        content,
-                        author,
-                        publication_year,
-                        section_title,
-                        AI_EMBED('{EMBEDDING_MODEL}', content) AS vector
-                    FROM books
-                """)
-            _log("")
-            _log("=" * 80)
-            _log("✓ SUCCESS! All books loaded and embeddings created.")
-            _log("=" * 80)
-            _log("Next steps: Test semantic search with docs/queries.md")
-        except snowflake_errors.ProgrammingError as e:
-            err = str(e)
-            if "AI_EMBED" in err or "Unknown function" in err or "CORTEX" in err.upper():
-                _log("✗ Cortex AI not available. See docs/cortex-setup.md. Books are in BOOKS table.")
-            else:
+                print(f"  Error: {e}", file=sys.stderr)
                 raise
-    finally:
-        conn.close()
+
+    print(f"\nDone. Total chunks: {total_chunks}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
