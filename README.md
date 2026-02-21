@@ -64,6 +64,7 @@ Then query in Snowflake (see [Query embeddings](#query-embeddings)) or use the [
 | `requirements.txt` | Python dependencies (key versions pinned for reproducibility; see [Dependencies](#dependencies)). |
 | `scripts/verify_setup.py` | Verify Python packages and optional Snowflake connectivity. |
 | `docs/REVIEW.md` | Project review: completeness, section extraction, and RAG (Chat-style Q&A) setup. |
+| `INDEX.md` | Index of project files with raw GitHub links. |
 
 ---
 
